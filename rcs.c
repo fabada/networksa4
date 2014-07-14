@@ -21,12 +21,12 @@
 
 extern int errno;
 
-rcssocket sockets[1000];		// Socket info
-map<u_long, client> asockets;
-int asockets[3000];				// Accepted sockets
+rcssocket sockets[1000];					// Socket info
+asocket asockets[3000];						// Accepted sockets
+map<int, map<u_long, client> > clients;		// key = socket. maps to another map for clients connected to that socket
 static int inited = 0;
 static int nextFreeSocket;
-static int nextFreeASocket;		// ASocket = accept socket
+static int nextFreeASocket;					// ASocket = accept socket
 
 void init() {
 	int i;
@@ -37,7 +37,8 @@ void init() {
 		sockets[i].listening = 0;
 	}
 	for (i = 0; i < 3000; i++) {
-		asockets[i] = -1;
+		asockets[i].sockindex = -1;
+		asockets[i].u_long = 0;
 	}
 	inited = 1;
 	nextFreeSocket = 0;
@@ -49,6 +50,11 @@ void resetSocket(int sockindex) {
 	sockets[sockindex].hasConnectionRequest = 0;
 	sockets[sockindex].hasSocketData = 0;
 	sockets[sockindex].listening = 0;
+}
+
+void resetASocket(int asockindex) {
+	asockets[asockindex].sockindex = -1;
+	asockets[asockindex].u_long = 0;
 }
 
 int findNextFreeSocket() {
@@ -75,6 +81,16 @@ int findNextFreeASocket() {
 
 	// No free sockets
 	return -1;
+}
+
+client initClient(u_long ipaddr) {
+	client newClient;
+
+	newClient.ipaddr = ipaddr;
+	newClient.syned = 0;
+	newClient.acked = 0;
+
+	return newClient;
 }
 
 int rcsSocket()
@@ -104,35 +120,59 @@ int rcsGetSockName(int sockindex, struct sockaddr_in *addr)
 	return ucpGetSockName(sockfd, addr);
 }
 
-int rcsAccept(int sockindex, struct sockaddr_in *addr) {
+int rcsAccept(int sockindex, struct sockaddr_in *from) {
+	char buffer[256];
+	int status;
+	int len;
+	u_long ipaddr;
+	int asockindex;
+	map<u_long, client>::iterator it;
+
 	if (nextFreeASocket == -1) {
 		errno = ENOBUFS;
-		return -1; // No sockets available
+		return -1; // No Asockets available
 	}
-	rcssocket *socket = &sockets[sockindex];
-	while (socket->hasConnectionRequest == 0);	// "block" if no connection request
-	int acceptsockindex = findNextFreeASocket();
 
-	return acceptsockindex + 1000; // > 1000 means the sockfd refers to an accepted socket
+	rcssocket *socket = &sockets[sockindex];
+	while (status = ucpRecvFrom(sockindex, (void *)buffer, len, from) != -1) {
+		ipaddr = from->sin_addr.S_addr;
+
+		if (clients[sockindex].find(ipaddr) == clients[sockindex].end()) {
+			// New client
+			clients[sockindex][ipaddr] = initClient(ipaddr);
+		}
+
+		// Check message for synack
+
+		if (clients[sockindex][ipaddr].syned == 1 && clients[sockindex][ipaddr].acked == 1) {
+			asockindex = nextFreeASocket;
+			nextFreeASocket = findNextFreeASocket();
+			asockets[asockindex].sockindex = sockindex;
+			asockets[asockindex].ipaddr = ipaddr;
+
+			return asockindex + 1000; // > 1000 means the sockfd refers to an accepted socket
+		}
+	}
+
+	return -1;
 }
 
-ssize_t rcsRecv(int sockindex, void *buf, int len) {
+ssize_t rcsRecv(int asockindex, void *buf, int len) {
 	int numrecv;
 	int sockfd;
-	int index;
-	if (sockindex < 0 || sockindex >= 4000) {
+	int sockindex;
+	u_long ipaddr;
+
+	if (asockindex < 1000 || asockindex >= 4000) {	// sockindex should be an asocket
 		errno = EBADF;
 		return -1;
-	} else if (sockindex >= 1000) {
-		index = asockets[sockindex-1000].sockindex;
-		sockfd = sockets[index].sockfd;
-	} else { // sockindex is [0, 1000)
+	} else {	// asocket
+		sockindex = asockets[asockindex];
 		sockfd = sockets[sockindex].sockfd;
 	}
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
-	//TODO: place "from" ip addr into the client list
-
+	
 	if (numrecv = ucpRecvFrom(sockfd, buf, len, from) == -1) {
 		return -1;
 	}
@@ -150,11 +190,12 @@ int rcsClose(int sockindex)
 		int asockindex = sockindex - 1000;
 
 		// if the asockfd is not open, return -1
-		if (asockets[asockindex] == -1) {
+		if (asockets[asockindex].sockindex == -1) {
 			errno = EBADF;
 			return -1;
 		}
-		asockets[asockindex] = -1;
+		resetASocket(asockindex);
+
 		return 0;
 	} else {
 		// Not a proper sockfd
