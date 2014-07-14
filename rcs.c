@@ -22,6 +22,7 @@
 extern int errno;
 
 rcssocket sockets[1000];		// Socket info
+map<u_long, client> asockets;
 int asockets[3000];				// Accepted sockets
 static int inited = 0;
 static int nextFreeSocket;
@@ -116,28 +117,26 @@ int rcsAccept(int sockindex, struct sockaddr_in *addr) {
 }
 
 ssize_t rcsRecv(int sockindex, void *buf, int len) {
-	int status;
+	int numrecv;
 	int sockfd;
-	if (sockindex < 0 || sockindex > 4000) {
+	int index;
+	if (sockindex < 0 || sockindex >= 4000) {
 		errno = EBADF;
 		return -1;
 	} else if (sockindex >= 1000) {
-		sock fd 
+		index = asockets[sockindex-1000].sockindex;
+		sockfd = sockets[index].sockfd;
 	} else { // sockindex is [0, 1000)
 		sockfd = sockets[sockindex].sockfd;
 	}
 
-	int sockindex = asockets[asockindex - 1000];
-	int sockfd = sockets[sockindex].sockfd;
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
-	
-	if (status = ucpRecvFrom(sockfd, buf, len, from) == -1) {
+	//TODO: place "from" ip addr into the client list
+
+	if (numrecv = ucpRecvFrom(sockfd, buf, len, from) == -1) {
 		return -1;
 	}
-
-	// Now that we filled out who sent to us inside of from, maintain it in the list
-
-
+	return numrecv;
 }
 
 int rcsClose(int sockindex)
