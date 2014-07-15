@@ -40,7 +40,7 @@ void init() {
 	}
 	for (i = 0; i < 3000; i++) {
 		asockets[i].sockindex = -1;
-		asockets[i].u_long = 0;
+		asockets[i].clientIp = 0;
 	}
 	inited = 1;
 	nextFreeSocket = 0;
@@ -56,7 +56,7 @@ void resetSocket(int sockindex) {
 
 void resetASocket(int asockindex) {
 	asockets[asockindex].sockindex = -1;
-	asockets[asockindex].u_long = 0;
+	asockets[asockindex].clientIp = 0;
 }
 
 int findNextFreeSocket() {
@@ -75,7 +75,7 @@ int findNextFreeSocket() {
 int findNextFreeASocket() {
 	int i;
 	for (i = 0; i < 3000; i++) {
-		if (asockets[i] == -1)
+		if (asockets[i].sockindex == -1)
 		{
 			return i;
 		}
@@ -137,7 +137,7 @@ int rcsAccept(int sockindex, struct sockaddr_in *from) {
 
 	rcssocket *socket = &sockets[sockindex];
 	while (status = ucpRecvFrom(sockindex, (void *)buffer, len, from) != -1) {
-		ipaddr = from->sin_addr.S_addr;
+		ipaddr = from->sin_addr.S_un.S_addr;
 
 		if (clients[sockindex].find(ipaddr) == clients[sockindex].end()) {
 			// New client
@@ -150,7 +150,7 @@ int rcsAccept(int sockindex, struct sockaddr_in *from) {
 			asockindex = nextFreeASocket;
 			nextFreeASocket = findNextFreeASocket();
 			asockets[asockindex].sockindex = sockindex;
-			asockets[asockindex].ipaddr = ipaddr;
+			asockets[asockindex].clientIp = ipaddr;
 
 			return asockindex + 1000; // > 1000 means the sockfd refers to an accepted socket
 		}
@@ -170,7 +170,7 @@ ssize_t rcsRecv(int asockindex, void *buf, int len) {
 		errno = EBADF;
 		return -1;
 	} else {	// asocket
-		sockindex = asockets[asockindex];
+		sockindex = asockets[asockindex].sockindex;
 		sockfd = sockets[sockindex].sockfd;
 	}
 

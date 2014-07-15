@@ -12,7 +12,7 @@ typedef struct asocket
 {
 	int sockindex;		// Used for multiplexing the asocket into a particular socket
 	u_long clientIp;
-};
+} asocket;
 
 typedef struct rcssocket {
 	int sockfd;
