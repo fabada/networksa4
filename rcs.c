@@ -162,6 +162,7 @@ ssize_t rcsRecv(int asockindex, void *buf, int len) {
 	int sockfd;
 	int sockindex;
 	u_long ipaddr;
+	char sendbuf[64];
 
 	if (asockindex < 1000 || asockindex >= 4000) {	// sockindex should be an asocket
 		errno = EBADF;
@@ -176,6 +177,12 @@ ssize_t rcsRecv(int asockindex, void *buf, int len) {
 	if (numrecv = ucpRecvFrom(sockfd, buf, len, from) == -1) {
 		return -1;
 	}
+
+	sendbuf = "ACK";
+	ucpSendTo(sockfd, (void *)sendbuf, 3, from);
+
+	free(from);
+	from = NULL;
 	return numrecv;
 }
 

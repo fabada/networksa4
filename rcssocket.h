@@ -6,7 +6,6 @@ typedef struct client
 	u_long ipaddr;
 	int syned;
 	int acked;
-	int sockindex; // pointer to the socket index
 };
 
 typedef struct asocket
