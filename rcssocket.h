@@ -6,7 +6,7 @@ typedef struct client
 	u_long ipaddr;
 	int syned;
 	int acked;
-};
+} client;
 
 typedef struct asocket
 {
