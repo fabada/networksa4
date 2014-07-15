@@ -19,6 +19,8 @@
 #include "rcssocket.h"
 #include <map>
 
+using namespace std;
+
 extern int errno;
 
 rcssocket sockets[1000];					// Socket info
