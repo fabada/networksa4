@@ -18,7 +18,7 @@
 #include <strings.h>
 #include "rcssocket.h"
 #include <map>
-#include <cstdlib>
+#include <cstring>
 
 using namespace std;
 
@@ -182,19 +182,17 @@ ssize_t rcsRecv(int asockfd, void *buf, int len) {
 
 int rcsClose(int sockfd)
 {
-	map<int, rcssocket>::iterator socketsit;
-	map<int, asocket>::iterator asocketsit;
 	u_long clientIp;
 	int socket;
 
-	if (socketsit = sockets.find(sockfd) != sockets.end()) {
-		sockets.erase(socketsit);
+	if (sockets.find(sockfd) != sockets.end()) {
+		sockets.erase(sockets.find(sockfd));
 		clients.erase(clients.find(sockfd));
 		return ucpClose(sockfd);
-	} else if (asocketsit = asockets.find(sockfd) != asockets.end()) {
+	} else if (asockets.find(sockfd) != asockets.end()) {
 		socket = asockets[sockfd].sockfd;
 		clientIp = asockets[sockfd].clientIp;
-		asockets.erase(asocketsit);
+                asockets.erase(asockets.find(sockfd));
 
 		// Remove client from list of connected clients
 		clients[socket].erase(clients[socket].find(clientIp));
