@@ -24,6 +24,14 @@ using namespace std;
 
 extern int errno;
 
+extern int ucpSocket();
+extern int ucpBind(int , struct sockaddr_in *);
+extern int ucpGetSockName(int, struct sockaddr_in *);
+extern int ucpSetSockRecvTimeout(int, int);
+extern int ucpSendTo(int, const void *, int, const struct sockaddr_in *);
+extern ssize_t ucpRecvFrom(int, void *, int, struct sockaddr_in *);
+extern int ucpClose(int);
+
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
 map<int, map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
@@ -109,7 +117,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	char buffer[256];
 	int status;
-	int len;
+	int len = 256;
 	u_long ipaddr;
 	int asockfd;
 

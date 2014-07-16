@@ -19,6 +19,8 @@
 
 extern int errno;
 
+extern int mybind(int, struct sockaddr_in *);
+
 unsigned int get_rand() {
     unsigned int ret = 0;
     int fd = open("/dev/urandom", O_RDONLY);
