@@ -132,8 +132,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		return -1;
 	}
 
-	while (status = ucpRecvFrom(sockfd, (void *)buffer, len, from) != -1) {
-		ipaddr = from->sin_addr.S_un.S_addr;
+	while ((status = ucpRecvFrom(sockfd, (void *)buffer, len, from)) != -1) {
+		ipaddr = from->sin_addr.s_addr;
 
 		if (clients[sockfd].find(ipaddr) == clients[sockfd].end()) {
 			// New client
@@ -164,9 +164,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 ssize_t rcsRecv(int asockfd, void *buf, int len) {
 	int numrecv;
-	int sockfd;
-	int sockindex;
-	u_long ipaddr;
 	char sendbuf[64];
 
 	if (asockets.find(asockfd) == asockets.end()) {	// sockindex should be an asocket
@@ -176,7 +173,7 @@ ssize_t rcsRecv(int asockfd, void *buf, int len) {
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 	
-	if (numrecv = ucpRecvFrom(asockfd, buf, len, from) == -1) {
+	if ((numrecv = ucpRecvFrom(asockfd, buf, len, from)) == -1) {
 		return -1;
 	}
 
@@ -212,7 +209,3 @@ int rcsClose(int sockfd)
 	}
 }
 
-int main(int argc, char const *argv[])
-{
-	return 0;
-}
