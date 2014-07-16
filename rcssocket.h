@@ -10,7 +10,7 @@ typedef struct client
 
 typedef struct asocket
 {
-	int sockindex;		// Used for multiplexing the asocket into a particular socket
+	int sockfd;		// Used for multiplexing the asocket into a particular socket
 	u_long clientIp;
 } asocket;
 
@@ -19,7 +19,7 @@ typedef struct rcssocket {
 	int hasConnectionRequest;
 	int hasSocketData;
 	int listening;
-	struct sockaddr_in *client;
+	int bound;
 } rcssocket;
 
 #endif

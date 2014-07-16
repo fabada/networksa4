@@ -23,66 +23,27 @@ using namespace std;
 
 extern int errno;
 
-rcssocket sockets[1000];					// Socket info
-asocket asockets[3000];						// Accepted sockets
-map<int, map<u_long, client> > clients;		// key = socket. maps to another map for clients connected to that socket
-static int inited = 0;
-static int nextFreeSocket;
-static int nextFreeASocket;					// ASocket = accept socket
+map<int, rcssocket> sockets;
+map<int, asocket> asockets;						// asockfd maps to the sockfd
+map<int, map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
 
-void init() {
-	int i;
-	for (i = 0; i < 1000; i++) {
-		sockets[i].sockfd = -1;
-		sockets[i].hasConnectionRequest = 0;
-		sockets[i].hasSocketData = 0;
-		sockets[i].listening = 0;
-	}
-	for (i = 0; i < 3000; i++) {
-		asockets[i].sockindex = -1;
-		asockets[i].clientIp = 0;
-	}
-	inited = 1;
-	nextFreeSocket = 0;
-	nextFreeASocket = 0;
+void initSocket(int sockfd) {
+	sockets[sockfd].sockfd = sockfd;
+	sockets[sockfd].hasConnectionRequest = 0;
+	sockets[sockfd].hasSocketData = 0;
+	sockets[sockfd].listening = 0;
+	sockets[sockfd].bound = 0;
 }
 
-void resetSocket(int sockindex) {
-	sockets[sockindex].sockfd = -1;
-	sockets[sockindex].hasConnectionRequest = 0;
-	sockets[sockindex].hasSocketData = 0;
-	sockets[sockindex].listening = 0;
-}
-
-void resetASocket(int asockindex) {
-	asockets[asockindex].sockindex = -1;
-	asockets[asockindex].clientIp = 0;
-}
-
-int findNextFreeSocket() {
-	int i;
-	for (i = 0; i < 1000; i++) {
-		if (sockets[i].sockfd == -1)
-		{
-			return i;
-		}
-	}
-
-	// No free sockets
-	return -1;
-}
-
-int findNextFreeASocket() {
-	int i;
-	for (i = 0; i < 3000; i++) {
-		if (asockets[i].sockindex == -1)
-		{
-			return i;
-		}
-	}
-
-	// No free sockets
-	return -1;
+/**
+ * Init the asocket.
+ * @param sockfd = socket file descriptor.
+ * @param asockfd = accepted socket fd
+ * @param ipaddr = client ip address
+ */
+void initASocket(int sockfd, int asockfd) {
+	asockets[asockfd].sockfd = sockfd;
+	asockets[asockfd].clientIp = ipaddr;
 }
 
 client initClient(u_long ipaddr) {
@@ -105,106 +66,144 @@ int rcsSocket()
 		init();
 	}
 	int sockfd = ucpSocket();
-	int sockindex = nextFreeSocket;
+	initSocket(sockfd);
 
-	sockets[sockindex].sockfd = sockfd;
-	nextFreeSocket = findNextFreeSocket();
-	return sockindex;
+	return sockfd;
 }
 
-int rcsGetSockName(int sockindex, struct sockaddr_in *addr)
+int rcsGetSockName(int sockfd, struct sockaddr_in *addr)
 {
-	if (sockindex > 1000 || sockindex < 0) {
+	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
 		return -1;
 	}
-	int sockfd = sockets[sockindex].sockfd;
 	return ucpGetSockName(sockfd, addr);
 }
 
-int rcsAccept(int sockindex, struct sockaddr_in *from) {
+int rcsConnect(int sockfd, const struct sockaddr_in *server) {
+	if (sockets.find(sockfd) == sockets.end()) {
+		errno = EBADF;
+		return -1;
+	}
+	if (sockets[sockfd].bound == 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	char buf[64];
+	char recvbuf[64];
+	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+
+	// First syn, then ack
+	buf = "SYN";
+	if (ucpSendTo(sockfd, (void *)buf, 3, server) == -1) {
+		return -1;
+	}
+	if (ucpRecvFrom(sockfd, (void *)recvbuf, 64, from) == -1) {
+		return -1;
+	}
+	buf = "ACK";
+	if (ucpSendTo(sockfd, (void *)buf, 3, server) == -1) {
+		return -1;
+	}
+
+	free(from);
+	from = NULL;
+	return 0;
+}
+
+int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	char buffer[256];
 	int status;
 	int len;
 	u_long ipaddr;
-	int asockindex;
-	map<u_long, client>::iterator it;
+	int asockfd;
 
-	if (nextFreeASocket == -1) {
-		errno = ENOBUFS;
-		return -1; // No Asockets available
+	// Invalid socket
+	if (sockets.find(sockfd) == sockets.end()) {
+		errno = EBADF;
+		return -1;
+	}
+	// Not listening
+	if (sockets[sockfd].listening == 0) {
+		errno = EINVAL;
+		return -1;
 	}
 
-	rcssocket *socket = &sockets[sockindex];
-	while (status = ucpRecvFrom(sockindex, (void *)buffer, len, from) != -1) {
+	while (status = ucpRecvFrom(sockfd, (void *)buffer, len, from) != -1) {
 		ipaddr = from->sin_addr.S_un.S_addr;
 
-		if (clients[sockindex].find(ipaddr) == clients[sockindex].end()) {
+		if (clients[sockfd].find(ipaddr) == clients[sockfd].end()) {
 			// New client
-			clients[sockindex][ipaddr] = initClient(ipaddr);
+			clients[sockfd][ipaddr] = initClient(ipaddr);
 		}
 
 		// Check message for synack
+		if (strcmp(buffer, "SYN") == 0) {
+			clients[sockfd][ipaddr].syned = 1;
+		} else if (strcmp(buffer, "ACK") == 0) {
+			// Must send syn first
+			if (clients[sockfd][ipaddr].syned == 0) {
+				return -1;
+			}
+			clients[sockfd][ipaddr].acked = 1;
+		} // else ignore
 
-		if (clients[sockindex][ipaddr].syned == 1 && clients[sockindex][ipaddr].acked == 1) {
-			asockindex = nextFreeASocket;
-			nextFreeASocket = findNextFreeASocket();
-			asockets[asockindex].sockindex = sockindex;
-			asockets[asockindex].clientIp = ipaddr;
-
-			return asockindex + 1000; // > 1000 means the sockfd refers to an accepted socket
+		if (clients[sockfd][ipaddr].syned == 1 && clients[sockfd][ipaddr].acked == 1) {
+			asockfd = ucpSocket();
+			ucpBind(asockfd, from);
+			initASocket(sockfd, asockfd, ipaddr);
+			return asockfd;
 		}
 	}
 
 	return -1;
 }
 
-ssize_t rcsRecv(int asockindex, void *buf, int len) {
+ssize_t rcsRecv(int asockfd, void *buf, int len) {
 	int numrecv;
 	int sockfd;
 	int sockindex;
 	u_long ipaddr;
 	char sendbuf[64];
 
-	if (asockindex < 1000 || asockindex >= 4000) {	// sockindex should be an asocket
+	if (asockets.find(asockfd) == asockets.end()) {	// sockindex should be an asocket
 		errno = EBADF;
 		return -1;
-	} else {	// asocket
-		sockindex = asockets[asockindex].sockindex;
-		sockfd = sockets[sockindex].sockfd;
 	}
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 	
-	if (numrecv = ucpRecvFrom(sockfd, buf, len, from) == -1) {
+	if (numrecv = ucpRecvFrom(asockfd, buf, len, from) == -1) {
 		return -1;
 	}
 
 	sendbuf = "ACK";
-	ucpSendTo(sockfd, (void *)sendbuf, 3, from);
+	ucpSendTo(asockfd, (void *)sendbuf, 3, from);
 
 	free(from);
 	from = NULL;
 	return numrecv;
 }
 
-int rcsClose(int sockindex)
+int rcsClose(int sockfd)
 {
-	if (sockindex >= 0 && sockindex < 1000) {
-		int sockfd = sockets[sockindex].sockfd;
-		resetSocket(sockindex);
+	map<int, rcssocket>::iterator socketsit;
+	map<int, asocket>::iterator asocketsit;
+	u_long clientIp;
+	int socket;
+
+	if (socketsit = sockets.find(sockfd) != sockets.end()) {
+		sockets.erase(socketsit);
+		clients.erase(clients.find(sockfd));
 		return ucpClose(sockfd);
-	} else if (sockindex >= 1000 && sockindex < 4000) {
-		// We assign #s 1000 and over to be accepted sockets
-		int asockindex = sockindex - 1000;
+	} else if (asocketsit = asockets.find(sockfd) != asockets.end()) {
+		socket = asockets[sockfd].sockfd;
+		clientIp = asockets[sockfd].clientIp;
+		asockets.erase(asocketsit);
 
-		// if the asockfd is not open, return -1
-		if (asockets[asockindex].sockindex == -1) {
-			errno = EBADF;
-			return -1;
-		}
-		resetASocket(asockindex);
-
+		// Remove client from list of connected clients
+		clients[sockets].erase(clients[socket].find(clientIp));
 		return 0;
 	} else {
 		// Not a proper sockfd
@@ -215,7 +214,5 @@ int rcsClose(int sockindex)
 
 int main(int argc, char const *argv[])
 {
-	init();
-
 	return 0;
 }
