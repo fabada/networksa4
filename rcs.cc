@@ -18,6 +18,7 @@
 #include <strings.h>
 #include "rcssocket.h"
 #include <map>
+#include <cstdlib>
 
 using namespace std;
 
@@ -41,7 +42,7 @@ void initSocket(int sockfd) {
  * @param asockfd = accepted socket fd
  * @param ipaddr = client ip address
  */
-void initASocket(int sockfd, int asockfd) {
+void initASocket(int sockfd, int asockfd, u_long ipaddr) {
 	asockets[asockfd].sockfd = sockfd;
 	asockets[asockfd].clientIp = ipaddr;
 }
@@ -58,13 +59,6 @@ client initClient(u_long ipaddr) {
 
 int rcsSocket()
 {
-	if (nextFreeSocket == -1) {
-		errno = ENOBUFS;
-		return -1; // No sockets available
-	}
-	if (inited == 0) {
-		init();
-	}
 	int sockfd = ucpSocket();
 	initSocket(sockfd);
 
@@ -95,14 +89,14 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 
 	// First syn, then ack
-	buf = "SYN";
+	strcpy(buf, "SYN");
 	if (ucpSendTo(sockfd, (void *)buf, 3, server) == -1) {
 		return -1;
 	}
 	if (ucpRecvFrom(sockfd, (void *)recvbuf, 64, from) == -1) {
 		return -1;
 	}
-	buf = "ACK";
+	strcpy(buf, "ACK");
 	if (ucpSendTo(sockfd, (void *)buf, 3, server) == -1) {
 		return -1;
 	}
@@ -178,7 +172,7 @@ ssize_t rcsRecv(int asockfd, void *buf, int len) {
 		return -1;
 	}
 
-	sendbuf = "ACK";
+	strcpy(sendbuf, "ACK");
 	ucpSendTo(asockfd, (void *)sendbuf, 3, from);
 
 	free(from);
@@ -203,8 +197,8 @@ int rcsClose(int sockfd)
 		asockets.erase(asocketsit);
 
 		// Remove client from list of connected clients
-		clients[sockets].erase(clients[socket].find(clientIp));
-		return 0;
+		clients[socket].erase(clients[socket].find(clientIp));
+		return ucpClose(sockfd);
 	} else {
 		// Not a proper sockfd
 		errno = EBADF;
