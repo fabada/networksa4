@@ -198,11 +198,13 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcv_header), from) == -1) {
 			return -1;
 		}
-		if ((rcv_header.flags & SYNACK) == 0) {
+		if (rcv_header.flags & FIN) {	// Connection was closed by the server
+			errno = ENETUNREACH;
+			return -1;
+		} else if ((rcv_header.flags & SYNACK) == 0) {
 			printf("NOT SYNACK\n");
 			continue;
 		}
-
 		printf("ACKING\n");
 		send_header.checksum = 0;
 		send_header.flags = ACK;
@@ -439,7 +441,7 @@ int rcsClose(int sockfd)
 		sockets.erase(sockets.find(sockfd));
 
 		// Inform the peer in the client server link that the connection is closed
-		while (1) {
+		while (peer.sin_addr.s_addr > 0) {
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
 
 			// Make sure we get a response from the client acknowledging the socket close
@@ -467,7 +469,7 @@ int rcsClose(int sockfd)
 		peer.sin_addr.s_addr = clientIp;
 
 		// Inform the peer in the client server link that the connection is closed
-		while (1) {
+		while (peer.sin_addr.s_addr > 0) {
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
 
 			// Make sure we get a response from the client acknowledging the socket close
