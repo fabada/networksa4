@@ -38,10 +38,11 @@ int rcs_server_sockfd;
 
 void initSocket(int sockfd) {
 	sockets[sockfd].sockfd = sockfd;
-	sockets[sockfd].hasConnectionRequest = 0;
-	sockets[sockfd].hasSocketData = 0;
 	sockets[sockfd].listening = 0;
 	sockets[sockfd].bound = 0;
+	sockets[sockfd].clientIp = 0;
+	sockets[sockfd].serverIp = 0;
+	sockets[sockfd].port = 0;
 }
 
 /**

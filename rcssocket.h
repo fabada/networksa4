@@ -16,12 +16,12 @@ typedef struct asocket
 
 typedef struct rcssocket {
 	int sockfd;
-	int hasConnectionRequest;
-	int hasSocketData;
 	int listening;
 	int bound;
-	int client;
-	u_long clientIp;			// For server sockets
+	u_long clientIp;
+	u_long serverIp;
+	unsigned short port;
+	struct sockaddr_in *from;
 } rcssocket;
 
 #endif
