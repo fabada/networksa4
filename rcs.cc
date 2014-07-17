@@ -182,12 +182,14 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		send_header.checksum = 0;
 		send_header.flags = SYN;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+		printf("Checksum: %lu", send_header.checksum);
+
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
 		printf("RECEIVING SYNACK\n");
 
-		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcv_header), from) == -1) {
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
 			continue;
 		}
 		checksum = rcv_header.checksum;
@@ -260,6 +262,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
 			printf("CORRUPTED\n");
+			printf("Checksum: %lu, hash: %lu\n", checksum, h);
 			send_header.checksum = 0;
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
