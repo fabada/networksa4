@@ -1,8 +1,6 @@
-/* 
- * Mahesh V. Tripunitara
- * University of Waterloo
- *
- */
+#define MAX_DATA_LEN 1500
+#define WINDOW_SIZE 4
+
 #include <stdio.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -19,6 +17,7 @@
 #include "rcssocket.h"
 #include <map>
 #include <cstring>
+#include "rcs.h"
 
 using namespace std;
 
@@ -69,6 +68,38 @@ client initClient(u_long ipaddr) {
 	newClient.acked = 0;
 
 	return newClient;
+}
+
+// Taken from http://www.cse.yorku.ca/~oz/hash.html
+unsigned long hash(unsigned char *str, int len)
+{
+	if (len == 0) return 0;
+
+    unsigned long hash = 5381;
+    int c, i;
+
+    for (i = 0; i < len; i++) {
+    	c = str[len];
+    	hash = ((hash << 5) + hash) + c;
+    }
+
+    return hash;
+}
+
+void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt) {
+	rcs_header header;
+	header.seq_num = seqnum;
+	header.flags = SYN;
+
+	if (data_len < MAX_DATA_LEN) {
+		header.flags = header.flags | FIN;
+	}
+
+	header.offset = seqnum * MAX_DATA_LEN;
+	header.data_len = data_len;
+	header.checksum = hash((unsigned char*)&header, sizeof(rcs_header)) + hash((unsigned char*)data, data_len);
+	memcpy(sendpkt, (void*)&header, sizeof(rcs_header));
+	memcpy(sendpkt + sizeof(rcs_header), data, data_len);
 }
 
 int rcsSocket()
@@ -196,27 +227,92 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	return -1;
 }
 
-ssize_t rcsRecv(int asockfd, void *buf, int len) {
-	int numrecv;
-	char sendbuf[64];
-
-	if (asockets.find(asockfd) == asockets.end()) {	// sockindex should be an asocket
-		errno = EBADF;
-		return -1;
-	}
+int rcsRecv(int sockfd, void *buf, int len) {
+	int expectedseqnum = 0;
+	int numrecv = 0;
+	rcs_header send_header, rcv_header;
+	u_long ipaddr;
+	unsigned char rcvbuf[1600];
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
-	
-	if ((numrecv = ucpRecvFrom(asockfd, buf, len, from)) == -1) {
+
+	send_header.seq_num = 20;
+	send_header.flags = ACK;
+
+	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+
+	for(;;) {
+		if (ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, from) == -1) { // Timeout or other error
+			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+		} else {
+			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
+			if (rcv_header.data_len < 0 || rcv_header.data_len <= MAX_DATA_LEN) { // Corrupted
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+			}
+			if (rcv_header.checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
+					&& rcv_header.seq_num == expectedseqnum) {
+				memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
+				numrecv = numrecv + rcv_header.data_len;
+				send_header.seq_num = rcv_header.seq_num;
+				expectedseqnum++;
+				send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+			} else {
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+			}
+		}
+	}
+	free(from);
+	return numrecv;
+}
+
+int rcsSend(int sockfd, const void* buf, int len) {
+	unsigned char sendpkt[MAX_DATA_LEN + 100];
+	rcs_header rcv_header;
+	rcs_header header;
+	int i, send_complete = 1, totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, cur_len;
+	unsigned int nextseqnum = 0;
+
+
+	if (sockets[i].sockfd != sockfd) {
 		return -1;
 	}
 
-	strcpy(sendbuf, "ACK");
-	ucpSendTo(asockfd, (void *)sendbuf, 3, from);
+	header.source_port = sockets[i].client->sin_port;
 
-	free(from);
-	from = NULL;
-	return numrecv;
+	ucpSetSockRecvTimeout(sockfd, 100);
+
+	while (totalseqnum > nextseqnum) {
+		if (send_complete == 1) {
+			cur_len = nextseqnum * MAX_DATA_LEN - len;
+			if (cur_len < 0) {
+				cur_len = MAX_DATA_LEN;
+			}
+			make_pkt(nextseqnum, &buf[nextseqnum * MAX_DATA_LEN], cur_len, sendpkt);
+			send_complete = 0;
+		}
+		ucpSendTo(sockfd, sendpkt, cur_len + sizeof(rcs_header), sockets[sockfd].client);
+
+		int size = ucpRecvFrom(sockfd, &rcv_header, 100, sockets[sockfd].client);
+
+		if (size == -1) { // Timeout
+			continue;
+		} else {
+			if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))) {
+				if (rcv_header.flags & ACK && rcv_header.seq_num == nextseqnum) {
+					send_complete = 1;
+					nextseqnum++;
+				} else {
+					continue;
+				}
+			} else {
+				continue;
+			}
+		}
+	}
+
+	return len;
+
 }
 
 int rcsClose(int sockfd)
