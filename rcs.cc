@@ -88,7 +88,7 @@ unsigned long hash(unsigned char *str, int len)
 
     for (i = 0; i < len; i++) {
     	c = str[len];
-    	hash = ((hash << 5) + hash) + c;
+	hash = ((hash << 5) + hash) + c;
     }
 
     return hash;
@@ -164,17 +164,24 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
+		printf("SYNING\n");
+
 		send_header.flags = SYN;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
+		printf("RECEIVING SYNACK\n");
+
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcv_header), from) == -1) {
 			return -1;
 		}
 		if ((rcv_header.flags & SYNACK) == 0) {
+			printf("NOT SYNACK\n");
 			continue;
 		}
+
+		printf("ACKING\n");
 		send_header.flags = ACK;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
@@ -199,7 +206,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	u_long ipaddr;
 	int asockfd;
 	rcs_header send_header, rcv_header;
-
+	unsigned long h;
+	unsigned long checksum;
 	// Invalid socket
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
@@ -215,8 +223,16 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	send_header.offset = 0;
 	send_header.data_len = 0;
 
+	printf("ACCEPTING\n");
 	while ((status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from)) >= 0) {
-		if (rcv_header.checksum != hash((unsigned char*)&rcv_header, sizeof(rcs_header))) {
+		checksum = rcv_header.checksum;
+		rcv_header.checksum = 0;
+		if (checksum != (h = hash((unsigned char*)&rcv_header, sizeof(rcs_header)))) {
+			printf("CORRUPTED\n");
+			printf("Checksum: %lu, Hash: %lu\n", rcv_header.checksum, h);
+			send_header.flags = ACK;
+			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 			continue;
 		}
 
@@ -228,6 +244,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 		// Check message for synack
 		if (rcv_header.flags & SYN) {
+			printf("SYNED\n");
+
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
 
@@ -237,18 +255,24 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 				return -1;
 			}
 		} else if (rcv_header.flags & ACK) {
+			printf("ACKED\n");
+
 			// Must send syn first
 			if (clients[sockfd].syned == 0) {
 				return -1;
 			}
 			clients[sockfd].acked = 1;
 		} else {
+			printf("NO RECOGNIZE\n");
+
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 		}
 
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
+			printf("SYNACKED\n");
+
 			// Since we done synacking save the client info
 			sockets[sockfd].clientIp = ipaddr;
 			sockets[sockfd].port = from->sin_port;
@@ -286,7 +310,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			} else if (rcv_header.checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
 					&& rcv_header.seq_num == expectedseqnum) {
-				memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
+		//		memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
 				numrecv = numrecv + rcv_header.data_len;
 				send_header.seq_num = rcv_header.seq_num;
 				expectedseqnum++;
@@ -321,7 +345,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 			if (cur_len < 0) {
 				cur_len = MAX_DATA_LEN;
 			}
-			make_pkt(nextseqnum, &buf[nextseqnum * MAX_DATA_LEN], cur_len, sendpkt);
+//			make_pkt(nextseqnum, &buf[nextseqnum * MAX_DATA_LEN], cur_len, sendpkt);
 			send_complete = 0;
 		}
 		ucpSendTo(rcs_client_sockfd, sendpkt, cur_len + sizeof(rcs_header), &sockets[sockfd].sockaddr);
@@ -422,3 +446,4 @@ int rcsClose(int sockfd)
 		return -1;
 	}
 }
+

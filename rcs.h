@@ -15,7 +15,7 @@ struct rcs_header {
 	unsigned int ack_num;
 	unsigned int offset;
 	unsigned int data_len;
-	unsigned int checksum;
+	unsigned long checksum;
 	unsigned int flags;
 };
 
