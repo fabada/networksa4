@@ -180,14 +180,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 
 		send_header.checksum = 0;
 		send_header.flags = SYN;
-		printf("%u\n", send_header.source_port);
-		printf("%u\n", send_header.dest_port);
-		printf("%u\n", send_header.seq_num);
-		printf("%u\n", send_header.ack_num);
-		printf("%u\n", send_header.offset);
-		printf("%u\n", send_header.data_len);
-		printf("%lu\n", send_header.checksum);
-		printf("%u\n", send_header.flags);
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 		printf("Checksum after computing: %lu\n", send_header.checksum);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
@@ -251,16 +243,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	while ((status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from)) >= 0) {
 		checksum = rcv_header.checksum;
 		rcv_header.checksum = 0;
-		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
-		printf("%u\n", rcv_header.source_port);
-		printf("%u\n", rcv_header.dest_port);
-		printf("%u\n", rcv_header.seq_num);
-		printf("%u\n", rcv_header.ack_num);
-		printf("%u\n", rcv_header.offset);
-		printf("%u\n", rcv_header.data_len);
-		printf("%lu\n", rcv_header.checksum);
-		printf("%u\n", rcv_header.flags);
-
+	/*	h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
 			printf("CORRUPTED\n");
 			printf("Checksum: %lu, Hash: %lu\n", checksum, h);
@@ -269,9 +252,10 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 			continue;
 		}
-
+*/
 		ipaddr = from->sin_addr.s_addr;
 		if (clients.find(sockfd) == clients.end()) {
+			printf("NEWCLIENT\n");
 			// New client
 			clients[sockfd] = initClient(ipaddr);
 		}
@@ -443,7 +427,7 @@ int rcsClose(int sockfd)
 		// Inform the peer in the client server link that the connection is closed
 		while (peer.sin_addr.s_addr > 0) {
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
-
+			printf("CLOSING\n");
 			// Make sure we get a response from the client acknowledging the socket close
 			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
 				continue;
