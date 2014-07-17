@@ -159,10 +159,10 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	while (true) {
 		send_header.flags = SYN;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-		if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), server) == -1) {
+		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
-		if (ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcv_header), from) == -1) {
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcv_header), from) == -1) {
 			return -1;
 		}
 		if ((rcv_header.flags & SYNACK) == 0) {
@@ -170,7 +170,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		}
 		send_header.flags = ACK;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-		if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), server) == -1) {
+		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
 		break;
@@ -205,7 +205,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	send_header.offset = 0;
 	send_header.data_len = 0;
 
-	while ((status = ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcs_header), from)) >= 0) {
+	while ((status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from)) >= 0) {
 		if (rcv_header.checksum != hash((unsigned char*)&rcv_header, sizeof(rcs_header))) {
 			continue;
 		}
@@ -223,7 +223,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 			send_header.flags = SYNACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-			if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), from) == -1) {
+			if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
 				return -1;
 			}
 		} else if (rcv_header.flags & ACK) {
@@ -235,7 +235,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		} else {
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-			ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), from);
+			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 		}
 
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
@@ -344,6 +344,7 @@ int rcsClose(int sockfd)
 	send_header.data_len = 0;
 	send_header.flags = FIN;
 	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+	struct sockaddr_in from;
 	u_long clientIp;
 	int socket;
 	struct sockaddr_in peer;
@@ -362,10 +363,10 @@ int rcsClose(int sockfd)
 
 		// Inform the peer in the client server link that the connection is closed
 		while (1) {
-			ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), peer);
+			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
 
 			// Make sure we get a response from the client acknowledging the socket close
-			if (ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcs_header), sockets[sockfd].client) == 1) {
+			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
 				continue;
 			} else {
 				if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
@@ -388,10 +389,10 @@ int rcsClose(int sockfd)
 
 		// Inform the peer in the client server link that the connection is closed
 		while (1) {
-			ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), peer);
+			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
 
 			// Make sure we get a response from the client acknowledging the socket close
-			if (ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcs_header), sockets[sockfd].client) == 1) {
+			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
 				continue;
 			} else {
 				if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
