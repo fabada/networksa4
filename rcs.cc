@@ -1,6 +1,7 @@
 #define MAX_DATA_LEN 1500
 #define WINDOW_SIZE 4
 
+#include <iostream>
 #include <stdio.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -18,6 +19,12 @@
 #include <map>
 #include <cstring>
 #include "rcs.h"
+
+
+#if 1
+#define _DEBUG_
+#endif
+
 
 using namespace std;
 
@@ -176,8 +183,11 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		break;
 	}
 
+	cout << "Connect finished" << endl;
+
 	sockets[sockfd].serverIp = server->sin_addr.s_addr;
 	sockets[sockfd].port = server->sin_port;
+	memcpy(&sockets[sockfd].sockaddr, from, sizeof(struct sockaddr_in));
 
 	free(from);
 	from = NULL;
@@ -242,11 +252,15 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			// Since we done synacking save the client info
 			sockets[sockfd].clientIp = ipaddr;
 			sockets[sockfd].port = from->sin_port;
+			memcpy(&sockets[sockfd].sockaddr, from, sizeof(struct sockaddr_in));
+
 			asockfd = ucpSocket();
 			initASocket(sockfd, asockfd, ipaddr);
 			return asockfd;
 		}
 	}
+
+	cout << "Accept finished" << endl;
 	return -1;
 }
 
@@ -270,8 +284,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			if (rcv_header.data_len < 0 || rcv_header.data_len <= MAX_DATA_LEN) { // Corrupted
 				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
-			}
-			if (rcv_header.checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
+			} else if (rcv_header.checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
 					&& rcv_header.seq_num == expectedseqnum) {
 				memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
 				numrecv = numrecv + rcv_header.data_len;
