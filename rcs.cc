@@ -99,7 +99,7 @@ unsigned long hash(unsigned char *str, int len)
 
     for (i = 0; i < len; i++) {
     	c = str[len];
-	hash = ((hash << 5) + hash) + c;
+		hash += c;
     }
 
     return hash;
@@ -158,7 +158,7 @@ int rcsGetSockName(int sockfd, struct sockaddr_in *addr)
 
 int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	rcs_header send_header, rcv_header;
-
+	unsigned long checksum, h;
 
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
@@ -188,6 +188,13 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		printf("RECEIVING SYNACK\n");
 
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcv_header), from) == -1) {
+			continue;
+		}
+		checksum = rcv_header.checksum;
+		rcv_header.checksum = 0;
+		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		if (checksum != h) {
+			printf("CORRUPTED SYNACK\n");
 			continue;
 		}
 		if (rcv_header.flags & FIN) {	// Connection was closed by the server
@@ -253,6 +260,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
 			printf("CORRUPTED\n");
+			send_header.checksum = 0;
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
@@ -289,6 +297,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
 			printf("CORRUPTED ACK\n");
+			send_header.checksum = 0;
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
