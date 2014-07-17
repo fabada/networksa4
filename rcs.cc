@@ -78,6 +78,17 @@ client initClient(u_long ipaddr) {
 	return newClient;
 }
 
+void initRcsHeader(rcs_header *header) {
+	header->source_port = 0;
+	header->dest_port = 0;
+	header->seq_num = 0;
+	header->ack_num = 0;
+	header->offset = 0;
+	header->data_len = 0;
+	header->checksum = 0;
+	header->flags = 0;
+}
+
 // Taken from http://www.cse.yorku.ca/~oz/hash.html
 unsigned long hash(unsigned char *str, int len)
 {
@@ -96,6 +107,7 @@ unsigned long hash(unsigned char *str, int len)
 
 void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt) {
 	rcs_header header;
+	initRcsHeader(&header);
 	header.seq_num = seqnum;
 	header.flags = SYN;
 
@@ -147,6 +159,7 @@ int rcsGetSockName(int sockfd, struct sockaddr_in *addr)
 int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	rcs_header send_header, rcv_header;
 
+
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
 		return -1;
@@ -156,11 +169,10 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		return -1;
 	}
 
-	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+	initRcsHeader(&rcv_header);
+	initRcsHeader(&send_header);
 
-	send_header.seq_num = 0;
-	send_header.offset = 0;
-	send_header.data_len = 0;
+	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 	
 	printf("Checksum before send: %lu\n", send_header.checksum);
 	
@@ -222,9 +234,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		return -1;
 	}
 
-	send_header.seq_num = 0;
-	send_header.offset = 0;
-	send_header.data_len = 0;
+	initRcsHeader(&send_header);
+	initRcsHeader(&rcv_header);
 
 	printf("ACCEPTING\n");
 	while ((status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from)) >= 0) {
@@ -297,6 +308,9 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	rcs_header send_header, rcv_header;
 	unsigned char rcvbuf[1600];
 
+	initRcsHeader(&rcv_header);
+	initRcsHeader(&send_header);
+
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 
 	send_header.seq_num = 20;
@@ -340,6 +354,8 @@ int rcsSend(int sockfd, const void* buf, int len) {
 		return -1;
 	}
 
+	initRcsHeader(&rcv_header);
+
 	ucpSetSockRecvTimeout(sockfd, 100);
 
 	while (totalseqnum > nextseqnum) {
@@ -379,16 +395,16 @@ int rcsSend(int sockfd, const void* buf, int len) {
 int rcsClose(int sockfd)
 {
 	rcs_header send_header, rcv_header;
-	send_header.seq_num = 0;
-	send_header.offset = 0;
-	send_header.data_len = 0;
-	send_header.flags = FIN;
-	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 	struct sockaddr_in from;
 	u_long clientIp;
 	int socket;
 	struct sockaddr_in peer;
 	peer.sin_family = AF_INET;
+
+	initRcsHeader(&rcv_header);
+	initRcsHeader(&send_header);
+	send_header.flags = FIN;
+	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 
 	if (sockets.find(sockfd) != sockets.end()) {
 		peer.sin_port = sockets[sockfd].port;
