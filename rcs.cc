@@ -138,6 +138,9 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		break;
 	}
 
+	sockets[sockfd].serverIp = server.sin_addr.s_addr;
+	sockets[sockfd].port = server.sin_port;
+
 	free(from);
 	from = NULL;
 	return 0;
@@ -188,7 +191,9 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
+			// Since we done synacking save the client info
 			sockets[sockfd].clientIp = ipaddr;
+			sockets[sockfd].port = from->sin_port;
 			asockfd = ucpSocket();
 			initASocket(sockfd, asockfd, ipaddr);
 			return asockfd;
