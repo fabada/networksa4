@@ -20,6 +20,7 @@ typedef struct rcssocket {
 	int hasSocketData;
 	int listening;
 	int bound;
+	int client;
 	u_long clientIp;			// For server sockets
 } rcssocket;
 

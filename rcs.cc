@@ -220,6 +220,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
 			sockets[sockfd].clientIp = ipaddr;
 			asockfd = ucpSocket();
+			sockets[sockfd].client = asockfd;
 			initASocket(sockfd, asockfd, ipaddr);
 			return asockfd;
 		}
@@ -277,8 +278,6 @@ int rcsSend(int sockfd, const void* buf, int len) {
 	if (sockets[i].sockfd != sockfd) {
 		return -1;
 	}
-
-	header.source_port = sockets[i].client->sin_port;
 
 	ucpSetSockRecvTimeout(sockfd, 100);
 
