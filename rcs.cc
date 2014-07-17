@@ -173,15 +173,21 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	initRcsHeader(&send_header);
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
-	
-	printf("Checksum before send: %lu\n", send_header.checksum);
-	
+
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
 		printf("SYNING\n");
 
 		send_header.checksum = 0;
 		send_header.flags = SYN;
+		printf("%u\n", send_header.source_port);
+		printf("%u\n", send_header.dest_port);
+		printf("%u\n", send_header.seq_num);
+		printf("%u\n", send_header.ack_num);
+		printf("%u\n", send_header.offset);
+		printf("%u\n", send_header.data_len);
+		printf("%lu\n", send_header.checksum);
+		printf("%u\n", send_header.flags);
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 		printf("Checksum after computing: %lu\n", send_header.checksum);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
@@ -243,7 +249,17 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	while ((status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from)) >= 0) {
 		checksum = rcv_header.checksum;
 		rcv_header.checksum = 0;
-		if (checksum != (h = hash((unsigned char*)&rcv_header, sizeof(rcs_header)))) {
+		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		printf("%u\n", rcv_header.source_port);
+		printf("%u\n", rcv_header.dest_port);
+		printf("%u\n", rcv_header.seq_num);
+		printf("%u\n", rcv_header.ack_num);
+		printf("%u\n", rcv_header.offset);
+		printf("%u\n", rcv_header.data_len);
+		printf("%lu\n", rcv_header.checksum);
+		printf("%u\n", rcv_header.flags);
+
+		if (checksum != h) {
 			printf("CORRUPTED\n");
 			printf("Checksum: %lu, Hash: %lu\n", checksum, h);
 			send_header.flags = ACK;
