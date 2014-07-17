@@ -34,7 +34,7 @@ extern int ucpClose(int);
 
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
-map<int, *map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
+map<int, map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
 int rcs_server_sockfd;
 
 void initSocket(int sockfd) {
@@ -56,6 +56,11 @@ void initASocket(int sockfd, int asockfd, u_long ipaddr) {
 	asockets[asockfd].clientIp = ipaddr;
 }
 
+map<u_long, client> initClientMap() {
+	map<u_long, client> newMap;
+	return newMap;
+}
+
 client initClient(u_long ipaddr) {
 	client newClient;
 
@@ -70,7 +75,7 @@ int rcsSocket()
 {
 	int sockfd = ucpSocket();
 	initSocket(sockfd);
-	clients[sockfd] = new map<u_long, client>;
+	clients[sockfd] = initClientMap();
 
 	return sockfd;
 }
@@ -111,21 +116,26 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		return -1;
 	}
 
-	char buf[64];
+	char synbuf[4] = "SYN";
+	char ackbuf[4] = "ACK";
 	char recvbuf[64];
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 
-	// First syn, then ack
-	strcpy(buf, "SYN");
-	if (ucpSendTo(sockfd, (void *)buf, 3, server) == -1) {
-		return -1;
-	}
-	if (ucpRecvFrom(sockfd, (void *)recvbuf, 64, from) == -1) {
-		return -1;
-	}
-	strcpy(buf, "ACK");
-	if (ucpSendTo(sockfd, (void *)buf, 3, server) == -1) {
-		return -1;
+	// First syn, then ack. Use a loop in case of failure
+	while (true) {
+		if (ucpSendTo(sockfd, (void *)synbuf, 4, server) == -1) {
+			return -1;
+		}
+		if (ucpRecvFrom(sockfd, (void *)recvbuf, 64, from) == -1) {
+			return -1;
+		}
+		if (strcmp(recvbuf, "SYNACK") != 0) {
+			continue;
+		}
+		if (ucpSendTo(sockfd, (void *)ackbuf, 4, server) == -1) {
+			return -1;
+		}
+		break;
 	}
 
 	free(from);
@@ -134,10 +144,11 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 }
 
 int rcsAccept(int sockfd, struct sockaddr_in *from) {
-	char buffer[256];
-	char sendbuf[64] = "SYNACK";
+	char buffer[4];
+	char sendbuf[7] = "SYNACK";
+	char ackbuf[4] = "ACK";
 	int status;
-	int len = 256;
+	int len = 4;
 	u_long ipaddr;
 	int asockfd;
 
@@ -154,7 +165,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 	while ((status = ucpRecvFrom(sockfd, (void *)buffer, len, from)) != -1) {
 		ipaddr = from->sin_addr.s_addr;
-
 		if (clients[sockfd].find(ipaddr) == clients[sockfd].end()) {
 			// New client
 			clients[sockfd][ipaddr] = initClient(ipaddr);
@@ -163,23 +173,26 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		// Check message for synack
 		if (strcmp(buffer, "SYN") == 0) {
 			clients[sockfd][ipaddr].syned = 1;
-			ucpSendTo(sockfd, (void *)sendbuf, 3, from);
+			clients[sockfd][ipaddr].acked = 0;
+			if (ucpSendTo(sockfd, (void *)sendbuf, 7, from) == -1) {
+				return -1;
+			}
 		} else if (strcmp(buffer, "ACK") == 0) {
 			// Must send syn first
 			if (clients[sockfd][ipaddr].syned == 0) {
 				return -1;
 			}
 			clients[sockfd][ipaddr].acked = 1;
-		} // else ignore
+		} else {
+	                ucpSendTo(sockfd, (void *)ackbuf, 4, from);
+		}
 
 		if (clients[sockfd][ipaddr].syned == 1 && clients[sockfd][ipaddr].acked == 1) {
 			asockfd = ucpSocket();
-			ucpBind(asockfd, from);
 			initASocket(sockfd, asockfd, ipaddr);
 			return asockfd;
 		}
 	}
-
 	return -1;
 }
 
@@ -212,7 +225,6 @@ int rcsClose(int sockfd)
 	int socket;
 
 	if (sockets.find(sockfd) != sockets.end()) {
-		delete sockets[sockfd];
 		sockets.erase(sockets.find(sockfd));
 		clients.erase(clients.find(sockfd));
 		return ucpClose(sockfd);
