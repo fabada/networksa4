@@ -33,7 +33,7 @@ extern int ucpClose(int);
 
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
-map<int, map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
+map<int, client> clients;						// client status
 int rcs_server_sockfd;
 
 void initSocket(int sockfd) {
@@ -106,7 +106,6 @@ int rcsSocket()
 {
 	int sockfd = ucpSocket();
 	initSocket(sockfd);
-	clients[sockfd] = initClientMap();
 
 	return sockfd;
 }
@@ -196,29 +195,30 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 	while ((status = ucpRecvFrom(sockfd, (void *)buffer, len, from)) != -1) {
 		ipaddr = from->sin_addr.s_addr;
-		if (clients[sockfd].find(ipaddr) == clients[sockfd].end()) {
+		if (clients.find(sockfd) == clients.end()) {
 			// New client
-			clients[sockfd][ipaddr] = initClient(ipaddr);
+			clients[sockfd] = initClient(ipaddr);
 		}
 
 		// Check message for synack
 		if (strcmp(buffer, "SYN") == 0) {
-			clients[sockfd][ipaddr].syned = 1;
-			clients[sockfd][ipaddr].acked = 0;
+			clients[sockfd].syned = 1;
+			clients[sockfd].acked = 0;
 			if (ucpSendTo(sockfd, (void *)sendbuf, 7, from) == -1) {
 				return -1;
 			}
 		} else if (strcmp(buffer, "ACK") == 0) {
 			// Must send syn first
-			if (clients[sockfd][ipaddr].syned == 0) {
+			if (clients[sockfd].syned == 0) {
 				return -1;
 			}
-			clients[sockfd][ipaddr].acked = 1;
+			clients[sockfd].acked = 1;
 		} else {
-	                ucpSendTo(sockfd, (void *)ackbuf, 4, from);
+			ucpSendTo(sockfd, (void *)ackbuf, 4, from);
 		}
 
-		if (clients[sockfd][ipaddr].syned == 1 && clients[sockfd][ipaddr].acked == 1) {
+		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
+			sockets[sockfd].clientIp = ipaddr;
 			asockfd = ucpSocket();
 			initASocket(sockfd, asockfd, ipaddr);
 			return asockfd;
@@ -322,15 +322,15 @@ int rcsClose(int sockfd)
 
 	if (sockets.find(sockfd) != sockets.end()) {
 		sockets.erase(sockets.find(sockfd));
-		clients.erase(clients.find(sockfd));
+		//clients.erase(clients.find(sockfd));
 		return ucpClose(sockfd);
 	} else if (asockets.find(sockfd) != asockets.end()) {
 		socket = asockets[sockfd].sockfd;
 		clientIp = asockets[sockfd].clientIp;
-                asockets.erase(asockets.find(sockfd));
+		asockets.erase(asockets.find(sockfd));
 
 		// Remove client from list of connected clients
-		clients[socket].erase(clients[socket].find(clientIp));
+		clients.erase(clients.find(socket));
 		return ucpClose(sockfd);
 	} else {
 		// Not a proper sockfd
