@@ -188,7 +188,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		printf("RECEIVING SYNACK\n");
 
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcv_header), from) == -1) {
-			return -1;
+			continue;
 		}
 		if (rcv_header.flags & FIN) {	// Connection was closed by the server
 			errno = ENETUNREACH;
@@ -219,7 +219,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 }
 
 int rcsAccept(int sockfd, struct sockaddr_in *from) {
-	int status;
 	u_long ipaddr;
 	int asockfd;
 	rcs_header send_header, rcv_header;
