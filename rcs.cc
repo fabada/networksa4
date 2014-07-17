@@ -161,13 +161,16 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	send_header.seq_num = 0;
 	send_header.offset = 0;
 	send_header.data_len = 0;
-
+	
+	printf("Checksum before send: %lu\n", send_header.checksum);
+	
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
 		printf("SYNING\n");
 
 		send_header.flags = SYN;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+		printf("Checksum after computing: %lu\n", send_header.checksum);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
@@ -229,7 +232,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		rcv_header.checksum = 0;
 		if (checksum != (h = hash((unsigned char*)&rcv_header, sizeof(rcs_header)))) {
 			printf("CORRUPTED\n");
-			printf("Checksum: %lu, Hash: %lu\n", rcv_header.checksum, h);
+			printf("Checksum: %lu, Hash: %lu\n", checksum, h);
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
