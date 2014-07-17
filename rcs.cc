@@ -138,8 +138,8 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		break;
 	}
 
-	sockets[sockfd].serverIp = server.sin_addr.s_addr;
-	sockets[sockfd].port = server.sin_port;
+	sockets[sockfd].serverIp = server->sin_addr.s_addr;
+	sockets[sockfd].port = server->sin_port;
 
 	free(from);
 	from = NULL;
