@@ -267,6 +267,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 int rcsRecv(int sockfd, void *buf, int len) {
 	unsigned int expectedseqnum = 0;
+	unsigned long checksum;
 	int numrecv = 0;
 	rcs_header send_header, rcv_header;
 	unsigned char rcvbuf[1600];
@@ -283,9 +284,11 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 		} else {
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
+			checksum = rcv_header.checksum;
+			rcv_header.checksum = 0;
 			if (rcv_header.data_len < 0 || rcv_header.data_len <= MAX_DATA_LEN) { // Corrupted
 				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
-			} else if (rcv_header.checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
+			} else if (checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
 					&& rcv_header.seq_num == expectedseqnum) {
 				memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
 				numrecv = numrecv + rcv_header.data_len;
@@ -315,7 +318,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 	rcs_header rcv_header;
 	int i, send_complete = 1, cur_len;
 	unsigned int totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, nextseqnum = 0;
-
+	unsigned long checksum;
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 
 	if (sockets[i].sockfd != sockfd) {
@@ -340,7 +343,9 @@ int rcsSend(int sockfd, const void* buf, int len) {
 		if (size == -1) { // Timeout
 			continue;
 		} else {
-			if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))) {
+			checksum = rcv_header.checksum;
+			rcv_header.checksum = 0;
+			if (checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))) {
 				if (rcv_header.flags & ACK && rcv_header.seq_num == nextseqnum) {
 					send_complete = 1;
 					nextseqnum++;
@@ -353,7 +358,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 		}
 	}
 
-	for(int i = 0; i < TERM_SEND - 1; i++) {
+	for(int i = 0; i < TERM_SEND; i++) {
 		ucpRecvFrom(rcs_client_sockfd, &rcv_header, 100, from);
 	}
 
