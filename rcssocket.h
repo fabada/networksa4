@@ -21,7 +21,7 @@ typedef struct rcssocket {
 	u_long clientIp;
 	u_long serverIp;
 	unsigned short port;
-	struct sockaddr_in *from;
+	struct sockaddr_in sockaddr;
 } rcssocket;
 
 #endif

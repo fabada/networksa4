@@ -34,7 +34,7 @@ extern int ucpClose(int);
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
 map<int, client> clients;						// client status
-int rcs_server_sockfd;
+static int rcs_server_sockfd, rcs_client_sockfd;
 
 void initSocket(int sockfd) {
 	sockets[sockfd].sockfd = sockfd;
@@ -221,7 +221,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
 			sockets[sockfd].clientIp = ipaddr;
 			asockfd = ucpSocket();
-			sockets[sockfd].client = asockfd;
 			initASocket(sockfd, asockfd, ipaddr);
 			return asockfd;
 		}
@@ -230,10 +229,9 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 }
 
 int rcsRecv(int sockfd, void *buf, int len) {
-	int expectedseqnum = 0;
+	unsigned int expectedseqnum = 0;
 	int numrecv = 0;
 	rcs_header send_header, rcv_header;
-	u_long ipaddr;
 	unsigned char rcvbuf[1600];
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
@@ -244,12 +242,12 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 
 	for(;;) {
-		if (ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, from) == -1) { // Timeout or other error
-			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+		if (ucpRecvFrom(rcs_server_sockfd, rcvbuf, MAX_DATA_LEN + 100, from) == -1) { // Timeout or other error
+			ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 		} else {
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			if (rcv_header.data_len < 0 || rcv_header.data_len <= MAX_DATA_LEN) { // Corrupted
-				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			}
 			if (rcv_header.checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
 					&& rcv_header.seq_num == expectedseqnum) {
@@ -258,9 +256,9 @@ int rcsRecv(int sockfd, void *buf, int len) {
 				send_header.seq_num = rcv_header.seq_num;
 				expectedseqnum++;
 				send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			} else {
-				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), from);
+				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			}
 		}
 	}
@@ -271,10 +269,10 @@ int rcsRecv(int sockfd, void *buf, int len) {
 int rcsSend(int sockfd, const void* buf, int len) {
 	unsigned char sendpkt[MAX_DATA_LEN + 100];
 	rcs_header rcv_header;
-	rcs_header header;
-	int i, send_complete = 1, totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, cur_len;
-	unsigned int nextseqnum = 0;
+	int i, send_complete = 1, cur_len;
+	unsigned int totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, nextseqnum = 0;
 
+	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 
 	if (sockets[i].sockfd != sockfd) {
 		return -1;
@@ -291,9 +289,9 @@ int rcsSend(int sockfd, const void* buf, int len) {
 			make_pkt(nextseqnum, &buf[nextseqnum * MAX_DATA_LEN], cur_len, sendpkt);
 			send_complete = 0;
 		}
-		ucpSendTo(sockfd, sendpkt, cur_len + sizeof(rcs_header), sockets[sockfd].client);
+		ucpSendTo(rcs_client_sockfd, sendpkt, cur_len + sizeof(rcs_header), &sockets[sockfd].sockaddr);
 
-		int size = ucpRecvFrom(sockfd, &rcv_header, 100, sockets[sockfd].client);
+		int size = ucpRecvFrom(rcs_client_sockfd, &rcv_header, 100, from);
 
 		if (size == -1) { // Timeout
 			continue;
@@ -311,6 +309,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 		}
 	}
 
+	free(from);
 	return len;
 
 }
