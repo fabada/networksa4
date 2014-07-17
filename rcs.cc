@@ -173,6 +173,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	initRcsHeader(&send_header);
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+	ucpSetSockRecvTimeout(sockfd, 100);
 
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
@@ -181,7 +182,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		send_header.checksum = 0;
 		send_header.flags = SYN;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-		printf("Checksum after computing: %lu\n", send_header.checksum);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
@@ -193,7 +193,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		if (rcv_header.flags & FIN) {	// Connection was closed by the server
 			errno = ENETUNREACH;
 			return -1;
-		} else if ((rcv_header.flags & SYNACK) == 0) {
+		} else if (!(rcv_header.flags & SYNACK)) {
 			printf("NOT SYNACK\n");
 			continue;
 		}
@@ -238,26 +238,26 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 	initRcsHeader(&send_header);
 	initRcsHeader(&rcv_header);
+	ucpSetSockRecvTimeout(sockfd, 100);
 
 	printf("ACCEPTING\n");
-	while ((status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from)) >= 0) {
+	while (true) {
+		// SYN
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
+			continue;
+		}
+		ipaddr = from->sin_addr.s_addr;
+		clients[sockfd] = initClient(ipaddr);
+
 		checksum = rcv_header.checksum;
 		rcv_header.checksum = 0;
-	/*	h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
 			printf("CORRUPTED\n");
-			printf("Checksum: %lu, Hash: %lu\n", checksum, h);
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 			continue;
-		}
-*/
-		ipaddr = from->sin_addr.s_addr;
-		if (clients.find(sockfd) == clients.end()) {
-			printf("NEWCLIENT\n");
-			// New client
-			clients[sockfd] = initClient(ipaddr);
 		}
 
 		// Check message for synack
@@ -273,7 +273,30 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
 				return -1;
 			}
-		} else if (rcv_header.flags & ACK) {
+		} else if (rcv_header.flags & FIN) {
+			errno = ENETUNREACH;
+			return -1;
+		} else {
+			continue;
+		}
+
+		// Get the ACK
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
+			continue;
+		}
+
+		checksum = rcv_header.checksum;
+		rcv_header.checksum = 0;
+		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		if (checksum != h) {
+			printf("CORRUPTED ACK\n");
+			send_header.flags = ACK;
+			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
+			continue;
+		}
+
+		if (rcv_header.flags & ACK) {
 			printf("ACKED\n");
 
 			// Must send syn first
@@ -281,13 +304,11 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 				return -1;
 			}
 			clients[sockfd].acked = 1;
+		} else if (rcv_header.flags & FIN) {
+			errno = ENETUNREACH;
+			return -1;
 		} else {
-			printf("NO RECOGNIZE\n");
-
-			send_header.checksum = 0;
-			send_header.flags = ACK;
-			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
+			continue;
 		}
 
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
@@ -412,6 +433,7 @@ int rcsClose(int sockfd)
 	initRcsHeader(&send_header);
 	send_header.flags = FIN;
 	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+	ucpSetSockRecvTimeout(sockfd, 100);
 
 	if (sockets.find(sockfd) != sockets.end()) {
 		peer.sin_port = sockets[sockfd].port;
