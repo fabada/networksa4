@@ -180,6 +180,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	while (true) {
 		printf("SYNING\n");
 
+		send_header.checksum = 0;
 		send_header.flags = SYN;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 		printf("Checksum after computing: %lu\n", send_header.checksum);
@@ -197,6 +198,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		}
 
 		printf("ACKING\n");
+		send_header.checksum = 0;
 		send_header.flags = ACK;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
@@ -221,7 +223,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	u_long ipaddr;
 	int asockfd;
 	rcs_header send_header, rcv_header;
-	unsigned long h;
+	unsigned long h = 0;
 	unsigned long checksum;
 	// Invalid socket
 	if (sockets.find(sockfd) == sockets.end()) {
@@ -263,6 +265,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
 
+			send_header.checksum = 0;
 			send_header.flags = SYNACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 			if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
@@ -279,6 +282,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		} else {
 			printf("NO RECOGNIZE\n");
 
+			send_header.checksum = 0;
 			send_header.flags = ACK;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
@@ -397,6 +401,7 @@ int rcsClose(int sockfd)
 	rcs_header send_header, rcv_header;
 	struct sockaddr_in from;
 	u_long clientIp;
+	unsigned long checksum;
 	int socket;
 	struct sockaddr_in peer;
 	peer.sin_family = AF_INET;
@@ -425,7 +430,9 @@ int rcsClose(int sockfd)
 			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
 				continue;
 			} else {
-				if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
+				checksum = rcv_header.checksum;
+				rcv_header.checksum = 0;
+				if (checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
 					&& (rcv_header.flags & ACK)) {
 					break;
 				}
@@ -451,7 +458,9 @@ int rcsClose(int sockfd)
 			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
 				continue;
 			} else {
-				if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
+				checksum = rcv_header.checksum;
+				rcv_header.checksum = 0;
+				if (checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
 					&& (rcv_header.flags & ACK)) {
 					break;
 				}
