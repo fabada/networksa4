@@ -73,7 +73,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "inet_aton(%s) failed.\n", argv[1]);
         exit(1);
     }
-    
+
     if(rcsConnect(s, (struct sockaddr_in *)(&a)) < 0) {
         perror("connect"); exit(1);
     }

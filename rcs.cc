@@ -34,7 +34,7 @@ extern int ucpClose(int);
 
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
-map<int, map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
+map<int, *map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
 int rcs_server_sockfd;
 
 void initSocket(int sockfd) {
@@ -70,12 +70,13 @@ int rcsSocket()
 {
 	int sockfd = ucpSocket();
 	initSocket(sockfd);
+	clients[sockfd] = new map<u_long, client>;
 
 	return sockfd;
 }
 
 int rcsBind(int sockfd, struct sockaddr_in *addr) {
-    if (ucpBind(sockfd, addr == -1)) {
+    if (ucpBind(sockfd, addr) == -1) {
 		return -1;
     }
 
@@ -134,6 +135,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 
 int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	char buffer[256];
+	char sendbuf[64] = "SYNACK";
 	int status;
 	int len = 256;
 	u_long ipaddr;
@@ -161,6 +163,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		// Check message for synack
 		if (strcmp(buffer, "SYN") == 0) {
 			clients[sockfd][ipaddr].syned = 1;
+			ucpSendTo(sockfd, (void *)sendbuf, 3, from);
 		} else if (strcmp(buffer, "ACK") == 0) {
 			// Must send syn first
 			if (clients[sockfd][ipaddr].syned == 0) {
@@ -209,6 +212,7 @@ int rcsClose(int sockfd)
 	int socket;
 
 	if (sockets.find(sockfd) != sockets.end()) {
+		delete sockets[sockfd];
 		sockets.erase(sockets.find(sockfd));
 		clients.erase(clients.find(sockfd));
 		return ucpClose(sockfd);
