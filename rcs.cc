@@ -35,6 +35,7 @@ extern int ucpClose(int);
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
 map<int, map<u_long, client> > clients;		// key = sockfd. maps to another map for clients connected to that socket
+int rcs_server_sockfd;
 
 void initSocket(int sockfd) {
 	sockets[sockfd].sockfd = sockfd;
@@ -71,6 +72,23 @@ int rcsSocket()
 	initSocket(sockfd);
 
 	return sockfd;
+}
+
+int rcsBind(int sockfd, struct sockaddr_in *addr) {
+    if (ucpBind(sockfd, addr == -1)) {
+		return -1;
+    }
+
+    sockets[sockfd].bound = 1;
+    return 0;
+}
+
+int rcsListen(int sockfd) {
+	// Find the rcsocket associated with the file descriptor
+	sockets[sockfd].listening = 1;
+	rcs_server_sockfd = sockfd;
+
+	return 0;
 }
 
 int rcsGetSockName(int sockfd, struct sockaddr_in *addr)
