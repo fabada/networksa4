@@ -21,13 +21,13 @@
 #include <fcntl.h>
 
 extern int rcsSocket();
-extern int rcsBind(int, struct sockaddr_in *);
+//extern int rcsBind(int, struct sockaddr_in *);
 extern int rcsGetSockName(int, struct sockaddr_in *);
-extern int rcsListen(int);
+//extern int rcsListen(int);
 extern int rcsAccept (int, struct sockaddr_in *);
 extern int rcsConnect (int, const struct sockaddr_in *);
-extern int rcsRecv (int, void *, int);
-extern int rcsSend(int, const void *, int);
+//extern int rcsRecv (int, void *, int);
+//extern int rcsSend(int, const void *, int);
 extern int rcsClose(int);
 
 unsigned int getrand() {
@@ -55,9 +55,9 @@ int main(int argc, char *argv[]) {
     a.sin_port = 0;
     a.sin_addr.s_addr = INADDR_ANY;
     
-    if(rcsBind(s, (struct sockaddr_in *)(&a)) < 0) {
-        perror("bind"); exit(1);
-    }
+    // if(rcsBind(s, (struct sockaddr_in *)(&a)) < 0) {
+    //     perror("bind"); exit(1);
+    // }
 
     if(rcsGetSockName(s, &a) < 0) {
 	fprintf(stderr, "rcsGetSockName() failed. Exiting...\n");
@@ -78,13 +78,15 @@ int main(int argc, char *argv[]) {
         perror("connect"); exit(1);
     }
     
-    while((nread = read(STDIN_FILENO, buf, 256)) > 0) {
-        if(rcsSend(s, buf, nread) < 0) {
-            perror("send"); exit(1);
-        }
+    // while((nread = read(STDIN_FILENO, buf, 256)) > 0) {
+    //     if(rcsSend(s, buf, nread) < 0) {
+    //         perror("send"); exit(1);
+    //     }
         
-        sleep(getrand()%7);
-    }
+    //     sleep(getrand()%7);
+    // }
+
+    printf("connected\n");
     
     rcsClose(s);
     

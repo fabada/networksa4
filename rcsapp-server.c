@@ -26,13 +26,13 @@
 
 
 extern int rcsSocket();
-extern int rcsBind(int, struct sockaddr_in *);
+//extern int rcsBind(int, struct sockaddr_in *);
 extern int rcsGetSockName(int, struct sockaddr_in *);
-extern int rcsListen(int);
+//extern int rcsListen(int);
 extern int rcsAccept (int, struct sockaddr_in *);
 extern int rcsConnect (int, const struct sockaddr_in *);
-extern int rcsRecv (int, void *, int);
-extern int rcsSend(int, const void *, int);
+//extern int rcsRecv (int, void *, int);
+//extern int rcsSend(int, const void *, int);
 extern int rcsClose(int);
 
 void *serviceConnection(void *arg) {
@@ -129,10 +129,10 @@ void *serviceConnection(void *arg) {
             exit(0);
         }
         
-        if(rcsBind(s, &a) < 0) {
-            fprintf(stderr, "rcsBind() failed. Exiting...\n");
-            exit(0);
-        }
+        // if(rcsBind(s, &a) < 0) {
+        //     fprintf(stderr, "rcsBind() failed. Exiting...\n");
+        //     exit(0);
+        // }
 
 	if(rcsGetSockName(s, &a) < 0) {
             fprintf(stderr, "rcsGetSockName() failed. Exiting...\n");
@@ -141,22 +141,23 @@ void *serviceConnection(void *arg) {
         
         printf("%s %u\n", inet_ntoa(a.sin_addr), ntohs(a.sin_port));
         
-        if(rcsListen(s) < 0) {
-            perror("listen"); exit(0);
-        }
+        // if(rcsListen(s) < 0) {
+        //     perror("listen"); exit(0);
+        // }
         
         memset(&a, 0, sizeof(struct sockaddr_in));
         int asock;
         while((asock = rcsAccept(s, (struct sockaddr_in *)&a)) > 0) {
-            int *newasock = (int *)malloc(sizeof(int));
-            *newasock = asock;
-            int err;
-            pthread_t t;
+            printf("accepted!\n");
+            // int *newasock = (int *)malloc(sizeof(int));
+            // *newasock = asock;
+            // int err;
+            // pthread_t t;
             
-            if(err = pthread_create(&t, NULL, &serviceConnection, (void *)(newasock))) {
-                fprintf(stderr, "pthread_create(): %s\n", strerror(err));
-                exit(1);
-            }
+            // if(err = pthread_create(&t, NULL, &serviceConnection, (void *)(newasock))) {
+            //     fprintf(stderr, "pthread_create(): %s\n", strerror(err));
+            //     exit(1);
+            // }
         }
         
         return 0;
