@@ -174,6 +174,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 
+	ucpSetSockRecvTimeout(sockfd, 100);
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
 		printf("SYNING\n");
@@ -188,7 +189,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		printf("RECEIVING SYNACK\n");
 
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcv_header), from) == -1) {
-			return -1;
+			continue;
 		}
 		if (rcv_header.flags & FIN) {	// Connection was closed by the server
 			errno = ENETUNREACH;
@@ -240,10 +241,12 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	initRcsHeader(&rcv_header);
 
 	printf("ACCEPTING\n");
-	while ((status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from)) >= 0) {
+	ucpSetSockRecvTimeout(sockfd, 100);
+	while (true) {
+		status = ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from);
 		checksum = rcv_header.checksum;
 		rcv_header.checksum = 0;
-	/*	h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
 			printf("CORRUPTED\n");
 			printf("Checksum: %lu, Hash: %lu\n", checksum, h);
@@ -252,7 +255,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 			continue;
 		}
-*/
+
 		ipaddr = from->sin_addr.s_addr;
 		if (clients.find(sockfd) == clients.end()) {
 			printf("NEWCLIENT\n");
