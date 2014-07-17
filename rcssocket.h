@@ -18,7 +18,7 @@ typedef struct rcssocket {
 	int sockfd;
 	int listening;
 	int bound;
-	u_long clientIpl
+	u_long clientIp;
 	u_long serverIp;
 	unsigned short port;
 } rcssocket;
