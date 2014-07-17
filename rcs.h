@@ -4,8 +4,9 @@
 enum rcs_flags{
 	SYN = 1,
 	ACK = 2,
-	FIN = 4
-};
+	FIN = 4,
+	SYNACK = 8
+} rcs_flags;
 
 struct rcs_header {
 	unsigned int source_port;
