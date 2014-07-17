@@ -1,5 +1,6 @@
 #define MAX_DATA_LEN 1500
 #define WINDOW_SIZE 4
+#define TERM_SEND 15
 
 #include <iostream>
 #include <stdio.h>
@@ -295,6 +296,14 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			} else {
 				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			}
+
+			if (rcv_header.flags & FIN) {
+				send_header.flags = ACK | FIN;
+				for (int i = 0; i < TERM_SEND; i++) {
+					ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+				}
+				break;
+			}
 		}
 	}
 	free(from);
@@ -313,7 +322,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 		return -1;
 	}
 
-	ucpSetSockRecvTimeout(sockfd, 100);
+	ucpSetSockRecvTimeout(sockfd, 50);
 
 	while (totalseqnum > nextseqnum) {
 		if (send_complete == 1) {
@@ -342,6 +351,10 @@ int rcsSend(int sockfd, const void* buf, int len) {
 				continue;
 			}
 		}
+	}
+
+	for(int i = 0; i < TERM_SEND - 1; i++) {
+		ucpRecvFrom(rcs_client_sockfd, &rcv_header, 100, from);
 	}
 
 	free(from);
