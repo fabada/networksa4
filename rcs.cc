@@ -107,6 +107,8 @@ int rcsGetSockName(int sockfd, struct sockaddr_in *addr)
 }
 
 int rcsConnect(int sockfd, const struct sockaddr_in *server) {
+	rcs_header send_header, rcv_header;
+
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
 		return -1;
@@ -116,23 +118,28 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		return -1;
 	}
 
-	char synbuf[4] = "SYN";
-	char ackbuf[4] = "ACK";
-	char recvbuf[64];
 	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+
+	send_header.seq_num = 0;
+	send_header.offset = 0;
+	send_header.data_len = 0;
 
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
-		if (ucpSendTo(sockfd, (void *)synbuf, 4, server) == -1) {
+		send_header.flags = SYN;
+		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+		if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
-		if (ucpRecvFrom(sockfd, (void *)recvbuf, 64, from) == -1) {
+		if (ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcv_header), from) == -1) {
 			return -1;
 		}
-		if (strcmp(recvbuf, "SYNACK") != 0) {
+		if ((rcv_header.flags & SYNACK) == 0) {
 			continue;
 		}
-		if (ucpSendTo(sockfd, (void *)ackbuf, 4, server) == -1) {
+		send_header.flags = ACK;
+		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+		if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
 		break;
@@ -147,13 +154,10 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 }
 
 int rcsAccept(int sockfd, struct sockaddr_in *from) {
-	char buffer[4];
-	char sendbuf[7] = "SYNACK";
-	char ackbuf[4] = "ACK";
 	int status;
-	int len = 4;
 	u_long ipaddr;
 	int asockfd;
+	rcs_header send_header, rcv_header;
 
 	// Invalid socket
 	if (sockets.find(sockfd) == sockets.end()) {
@@ -166,7 +170,15 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		return -1;
 	}
 
-	while ((status = ucpRecvFrom(sockfd, (void *)buffer, len, from)) != -1) {
+	send_header.seq_num = 0;
+	send_header.offset = 0;
+	send_header.data_len = 0;
+
+	while ((status = ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcs_header), from)) >= 0) {
+		if (rcv_header.checksum != hash((unsigned char*)&rcv_header, sizeof(rcs_header))) {
+			continue;
+		}
+
 		ipaddr = from->sin_addr.s_addr;
 		if (clients.find(sockfd) == clients.end()) {
 			// New client
@@ -174,20 +186,25 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 
 		// Check message for synack
-		if (strcmp(buffer, "SYN") == 0) {
+		if (rcv_header.flags & SYN) {
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
-			if (ucpSendTo(sockfd, (void *)sendbuf, 7, from) == -1) {
+
+			send_header.flags = SYNACK;
+			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), from) == -1) {
 				return -1;
 			}
-		} else if (strcmp(buffer, "ACK") == 0) {
+		} else if (rcv_header.flags & ACK) {
 			// Must send syn first
 			if (clients[sockfd].syned == 0) {
 				return -1;
 			}
 			clients[sockfd].acked = 1;
 		} else {
-			ucpSendTo(sockfd, (void *)ackbuf, 4, from);
+			send_header.flags = ACK;
+			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), from);
 		}
 
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
@@ -227,12 +244,43 @@ ssize_t rcsRecv(int asockfd, void *buf, int len) {
 
 int rcsClose(int sockfd)
 {
+	rcs_header send_header, rcv_header;
+	send_header.seq_num = 0;
+	send_header.offset = 0;
+	send_header.data_len = 0;
+	send_header.flags = FIN;
+	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 	u_long clientIp;
 	int socket;
+	struct sockaddr_in peer;
+	peer.sin_family = AF_INET;
 
 	if (sockets.find(sockfd) != sockets.end()) {
+		peer.sin_port = sockets[sockfd].port;
+
+		if (sockets[sockfd].serverIp > 0) {
+			peer.sin_addr.s_addr = sockets[sockfd].serverIp;
+		} else {
+			peer.sin_addr.s_addr = sockets[sockfd].clientIp;
+			clients.erase(clients.find(sockfd));
+		}
 		sockets.erase(sockets.find(sockfd));
-		//clients.erase(clients.find(sockfd));
+
+		// Inform the peer in the client server link that the connection is closed
+		while (1) {
+			ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), peer);
+
+			// Make sure we get a response from the client acknowledging the socket close
+			if (ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcs_header), sockets[sockfd].client) == 1) {
+				continue;
+			} else {
+				if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
+					&& (rcv_header.flags & ACK)) {
+					break;
+				}
+			}
+		}
+
 		return ucpClose(sockfd);
 	} else if (asockets.find(sockfd) != asockets.end()) {
 		socket = asockets[sockfd].sockfd;
@@ -241,6 +289,24 @@ int rcsClose(int sockfd)
 
 		// Remove client from list of connected clients
 		clients.erase(clients.find(socket));
+
+		peer.sin_addr.s_addr = clientIp;
+
+		// Inform the peer in the client server link that the connection is closed
+		while (1) {
+			ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), peer);
+
+			// Make sure we get a response from the client acknowledging the socket close
+			if (ucpRecvFrom(sockfd, (void *)rcv_header, sizeof(rcs_header), sockets[sockfd].client) == 1) {
+				continue;
+			} else {
+				if (rcv_header.checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
+					&& (rcv_header.flags & ACK)) {
+					break;
+				}
+			}
+		}
+
 		return ucpClose(sockfd);
 	} else {
 		// Not a proper sockfd
@@ -248,4 +314,3 @@ int rcsClose(int sockfd)
 		return -1;
 	}
 }
-
