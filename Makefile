@@ -1,12 +1,18 @@
-CFLAGS = -pthread -Wall
+CFLAGS = -pthread -S -Wall
 
 all: librcs.a
 
-rcs.o: rcs.cc rcssocket.h ucp_c.c mybind.c
-	g++ $(CFLAGS) rcs.cc ucp_c.c mybind.c -o rcs.o
+mybind.o:
+	gcc $(CFLAGS) mybind.c -o mybind.o
 
-librcs.a: rcs.o
-	ar rcs librcs.a rcs.o
+ucp_c.o:
+	gcc $(CFLAGS) ucp_c.c -o ucp_c.o
+
+rcs.o: rcs.cc rcssocket.h
+	g++ $(CFLAGS) rcs.cc -o rcs.o
+
+librcs.a: rcs.o mybind.o ucp_c.o
+	ar rcs librcs.a rcs.o mybind.o ucp_c.o
 
 clean:
 	rm -rf *.o *.a
