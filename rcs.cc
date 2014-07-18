@@ -227,8 +227,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		break;
 	}
 
-	cout << "Connect finished" << endl;
-
 	sockets[sockfd].serverIp = server->sin_addr.s_addr;
 	sockets[sockfd].port = server->sin_port;
 	memcpy(&sockets[sockfd].sockaddr, from, sizeof(struct sockaddr_in));
@@ -341,7 +339,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 	}
 
-	cout << "Accept finished" << endl;
 	return -1;
 }
 
