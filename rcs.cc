@@ -98,7 +98,7 @@ unsigned long hash(unsigned char *str, int len)
     int c, i;
 
     for (i = 0; i < len; i++) {
-    	c = str[len];
+    	c = str[i];
 		hash += c;
     }
 
@@ -212,6 +212,17 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
+		}
+
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
+			continue;
+		}
+		checksum = rcv_header.checksum;
+		rcv_header.checksum = 0;
+		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		if (checksum != h) {
+			printf("CORRUPTED ACK\n");
+			continue;
 		}
 		break;
 	}
