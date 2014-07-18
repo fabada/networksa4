@@ -178,8 +178,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
-		printf("SYNING\n");
-
 		send_header.checksum = 0;
 		send_header.flags = SYN;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
@@ -187,7 +185,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
-		printf("RECEIVING SYNACK\n");
 
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
 			continue;
@@ -196,17 +193,14 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		rcv_header.checksum = 0;
 		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
-			printf("CORRUPTED SYNACK\n");
 			continue;
 		}
 		if (rcv_header.flags & FIN) {	// Connection was closed by the server
 			errno = ENETUNREACH;
 			return -1;
 		} else if (!(rcv_header.flags & SYNACK)) {
-			printf("NOT SYNACK\n");
 			continue;
 		}
-		printf("ACKING\n");
 		send_header.checksum = 0;
 		send_header.flags = ACK;
 		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
@@ -221,7 +215,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		rcv_header.checksum = 0;
 		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
-			printf("CORRUPTED ACK\n");
 			continue;
 		}
 
@@ -229,7 +222,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 			errno = ENETUNREACH;
 			return -1;
 		} else if (!(rcv_header.flags & ACK)) {
-			printf("NOT ACK\n");
 			continue;
 		}
 		break;
@@ -267,7 +259,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	initRcsHeader(&rcv_header);
 	ucpSetSockRecvTimeout(sockfd, 100);
 
-	printf("ACCEPTING\n");
 	while (true) {
 		// SYN
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
@@ -280,7 +271,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		rcv_header.checksum = 0;
 		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
-			printf("CORRUPTED\n");
 			send_header.checksum = 0;
 			send_header.flags = ERR;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
@@ -290,8 +280,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 		// Check message for synack
 		if (rcv_header.flags & SYN) {
-			printf("SYNED\n");
-
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
 
@@ -317,7 +305,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		rcv_header.checksum = 0;
 		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
 		if (checksum != h) {
-			printf("CORRUPTED ACK\n");
 			send_header.checksum = 0;
 			send_header.flags = ERR;
 			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
@@ -326,8 +313,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 
 		if (rcv_header.flags & ACK) {
-			printf("ACKED\n");
-
 			// Must send syn first
 			if (clients[sockfd].syned == 0) {
 				return -1;
@@ -345,8 +330,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
-			printf("SYNACKED\n");
-
 			// Since we done synacking save the client info
 			sockets[sockfd].clientIp = ipaddr;
 			sockets[sockfd].port = from->sin_port;
@@ -475,6 +458,7 @@ int rcsClose(int sockfd)
 	u_long clientIp;
 	unsigned long checksum;
 	int socket;
+	int tries = 0;
 	struct sockaddr_in peer;
 	peer.sin_family = AF_INET;
 
@@ -496,9 +480,9 @@ int rcsClose(int sockfd)
 		sockets.erase(sockets.find(sockfd));
 
 		// Inform the peer in the client server link that the connection is closed
-		while (peer.sin_addr.s_addr > 0) {
+		while (peer.sin_addr.s_addr > 0 && tries < 5) {
+			tries++;
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
-			printf("CLOSING\n");
 			// Make sure we get a response from the client acknowledging the socket close
 			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
 				continue;
@@ -524,7 +508,8 @@ int rcsClose(int sockfd)
 		peer.sin_addr.s_addr = clientIp;
 
 		// Inform the peer in the client server link that the connection is closed
-		while (peer.sin_addr.s_addr > 0) {
+		while (peer.sin_addr.s_addr > 0 && tries < 5) {
+			tries++;
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
 
 			// Make sure we get a response from the client acknowledging the socket close
