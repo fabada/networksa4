@@ -149,15 +149,15 @@ void *serviceConnection(void *arg) {
         int asock;
         while((asock = rcsAccept(s, (struct sockaddr_in *)&a)) > 0) {
             printf("accepted!\n");
-            // int *newasock = (int *)malloc(sizeof(int));
-            // *newasock = asock;
-            // int err;
-            // pthread_t t;
+            int *newasock = (int *)malloc(sizeof(int));
+            *newasock = asock;
+            int err;
+            pthread_t t;
             
-            // if(err = pthread_create(&t, NULL, &serviceConnection, (void *)(newasock))) {
-            //     fprintf(stderr, "pthread_create(): %s\n", strerror(err));
-            //     exit(1);
-            // }
+            if(err = pthread_create(&t, NULL, &serviceConnection, (void *)(newasock))) {
+                fprintf(stderr, "pthread_create(): %s\n", strerror(err));
+                exit(1);
+            }
         }
         
         return 0;

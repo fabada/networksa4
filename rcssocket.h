@@ -20,6 +20,7 @@ typedef struct rcssocket {
 	int bound;
 	u_long clientIp;
 	u_long serverIp;
+	u_long ipaddr;
 	unsigned short port;
 	struct sockaddr_in sockaddr;
 } rcssocket;

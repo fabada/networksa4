@@ -1,6 +1,5 @@
 #define MAX_DATA_LEN 1500
-#define WINDOW_SIZE 4
-#define TERM_SEND 15
+#define TERM_SEND 12
 
 #include <iostream>
 #include <stdio.h>
@@ -42,7 +41,6 @@ extern int ucpClose(int);
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
 map<int, client> clients;						// client status
-static int rcs_server_sockfd, rcs_client_sockfd;
 
 void initSocket(int sockfd) {
 	sockets[sockfd].sockfd = sockfd;
@@ -106,6 +104,11 @@ unsigned long hash(unsigned char *str, int len)
     return hash;
 }
 
+unsigned long compute_header_checksum(rcs_header *header) {
+	header->checksum = 0;
+	return hash((unsigned char*)header, sizeof(rcs_header));
+}
+
 void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt) {
 	rcs_header header;
 	initRcsHeader(&header);
@@ -113,7 +116,7 @@ void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt
 	header.flags = SYN;
 
 	if (data_len < MAX_DATA_LEN) {
-		header.flags = header.flags | FIN;
+		header.flags = FIN;
 	}
 
 	header.offset = seqnum * MAX_DATA_LEN;
@@ -137,13 +140,13 @@ int rcsBind(int sockfd, struct sockaddr_in *addr) {
     }
 
     sockets[sockfd].bound = 1;
+    sockets[sockfd].ipaddr = addr->sin_addr.s_addr;
     return 0;
 }
 
 int rcsListen(int sockfd) {
 	// Find the rcsocket associated with the file descriptor
 	sockets[sockfd].listening = 1;
-	rcs_server_sockfd = sockfd;
 
 	return 0;
 }
@@ -160,6 +163,7 @@ int rcsGetSockName(int sockfd, struct sockaddr_in *addr)
 int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	rcs_header send_header, rcv_header;
 	unsigned long checksum, h;
+	struct sockaddr_in from;
 
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
@@ -173,25 +177,21 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	initRcsHeader(&rcv_header);
 	initRcsHeader(&send_header);
 
-	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
 	ucpSetSockRecvTimeout(sockfd, 100);
 
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
-		send_header.checksum = 0;
 		send_header.flags = SYN;
-		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-
+		send_header.checksum = compute_header_checksum(&send_header);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
 
-		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
 			continue;
 		}
 		checksum = rcv_header.checksum;
-		rcv_header.checksum = 0;
-		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		h = compute_header_checksum(&rcv_header);
 		if (checksum != h) {
 			continue;
 		}
@@ -201,19 +201,17 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		} else if (!(rcv_header.flags & SYNACK)) {
 			continue;
 		}
-		send_header.checksum = 0;
 		send_header.flags = ACK;
-		send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+		send_header.checksum = compute_header_checksum(&send_header);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
 
-		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
 			continue;
 		}
 		checksum = rcv_header.checksum;
-		rcv_header.checksum = 0;
-		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		h = compute_header_checksum(&rcv_header);
 		if (checksum != h) {
 			continue;
 		}
@@ -227,14 +225,10 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		break;
 	}
 
-	cout << "Connect finished" << endl;
+	sockets[sockfd].serverIp = from.sin_addr.s_addr;
+	sockets[sockfd].port = from.sin_port;
+	memcpy(&sockets[sockfd].sockaddr, &from, sizeof(struct sockaddr_in));
 
-	sockets[sockfd].serverIp = server->sin_addr.s_addr;
-	sockets[sockfd].port = server->sin_port;
-	memcpy(&sockets[sockfd].sockaddr, from, sizeof(struct sockaddr_in));
-
-	free(from);
-	from = NULL;
 	return 0;
 }
 
@@ -257,23 +251,22 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 	initRcsHeader(&send_header);
 	initRcsHeader(&rcv_header);
-	ucpSetSockRecvTimeout(sockfd, 100);
+	ucpSetSockRecvTimeout(sockfd, 0);
 
 	while (true) {
 		// SYN
 		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
 			continue;
 		}
+		ucpSetSockRecvTimeout(sockfd, 50);
 		ipaddr = from->sin_addr.s_addr;
 		clients[sockfd] = initClient(ipaddr);
 
 		checksum = rcv_header.checksum;
-		rcv_header.checksum = 0;
-		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		h = compute_header_checksum(&rcv_header);
 		if (checksum != h) {
-			send_header.checksum = 0;
 			send_header.flags = ERR;
-			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			send_header.checksum = compute_header_checksum(&send_header);
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 			continue;
 		}
@@ -283,9 +276,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
 
-			send_header.checksum = 0;
 			send_header.flags = SYNACK;
-			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			send_header.checksum = compute_header_checksum(&send_header);
 			if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
 				return -1;
 			}
@@ -302,12 +294,10 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 
 		checksum = rcv_header.checksum;
-		rcv_header.checksum = 0;
-		h = hash((unsigned char*)&rcv_header, sizeof(rcs_header));
+		h = compute_header_checksum(&rcv_header);
 		if (checksum != h) {
-			send_header.checksum = 0;
 			send_header.flags = ERR;
-			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			send_header.checksum = compute_header_checksum(&send_header);
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 			continue;
 		}
@@ -317,11 +307,25 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			if (clients[sockfd].syned == 0) {
 				return -1;
 			}
+			// Connect to the client now
+			sockets[sockfd].clientIp = ipaddr;
+			sockets[sockfd].port = from->sin_port;
+			asockfd = ucpSocket();
+			initASocket(sockfd, asockfd, ipaddr);
+			memcpy(&sockets[asockfd].sockaddr, from, sizeof(struct sockaddr_in));
+			struct sockaddr_in a;
+
+			memset(&a, 0, sizeof(struct sockaddr_in));
+			a.sin_family = AF_INET;
+			a.sin_port = 0;
+			a.sin_addr.s_addr = INADDR_ANY;
+
+			rcsBind(asockfd, &a);
+
 			clients[sockfd].acked = 1;
-			send_header.checksum = 0;
 			send_header.flags = ACK;
-			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
+			send_header.checksum = compute_header_checksum(&send_header);
+			ucpSendTo(asockfd, (void *)&send_header, sizeof(rcs_header), from);
 		} else if (rcv_header.flags & FIN) {
 			errno = ENETUNREACH;
 			return -1;
@@ -330,18 +334,10 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
-			// Since we done synacking save the client info
-			sockets[sockfd].clientIp = ipaddr;
-			sockets[sockfd].port = from->sin_port;
-			memcpy(&sockets[sockfd].sockaddr, from, sizeof(struct sockaddr_in));
-
-			asockfd = ucpSocket();
-			initASocket(sockfd, asockfd, ipaddr);
 			return asockfd;
 		}
 	}
 
-	cout << "Accept finished" << endl;
 	return -1;
 }
 
@@ -355,44 +351,45 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	initRcsHeader(&rcv_header);
 	initRcsHeader(&send_header);
 
-	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+	struct sockaddr_in from;
 
 	send_header.seq_num = 20;
 	send_header.flags = ACK;
+	send_header.checksum = compute_header_checksum(&send_header);
 
-	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-
+	ucpSetSockRecvTimeout(sockfd, 0);
 	for(;;) {
-		if (ucpRecvFrom(rcs_server_sockfd, rcvbuf, MAX_DATA_LEN + 100, from) == -1) { // Timeout or other error
-			ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+		if (ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
+			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 		} else {
+			ucpSetSockRecvTimeout(sockfd, 50);
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
-			rcv_header.checksum = 0;
-			if (rcv_header.data_len < 0 || rcv_header.data_len <= MAX_DATA_LEN) { // Corrupted
-				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
-			} else if (checksum == (hash((unsigned char*)&rcv_header, sizeof(rcs_header)) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
+
+			if (rcv_header.data_len < 0 || rcv_header.data_len > MAX_DATA_LEN) { // Corrupted
+			} else if (checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
 					&& rcv_header.seq_num == expectedseqnum) {
-		//		memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
+				memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
 				numrecv = numrecv + rcv_header.data_len;
 				send_header.seq_num = rcv_header.seq_num;
+				send_header.checksum = compute_header_checksum(&send_header);
 				expectedseqnum++;
-				send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
-				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
-			} else {
-				ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			}
 
-			if (rcv_header.flags & FIN) {
-				send_header.flags = ACK | FIN;
+			if (checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len)) 
+					&& rcv_header.flags & FIN) {
+				send_header.flags = FIN;
+				send_header.checksum = compute_header_checksum(&send_header);
 				for (int i = 0; i < TERM_SEND; i++) {
-					ucpSendTo(rcs_server_sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+					ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 				}
 				break;
+			} else {
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			}
 		}
 	}
-	free(from);
+
 	return numrecv;
 }
 
@@ -402,35 +399,32 @@ int rcsSend(int sockfd, const void* buf, int len) {
 	int i, send_complete = 1, cur_len;
 	unsigned int totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, nextseqnum = 0;
 	unsigned long checksum;
-	struct sockaddr_in *from = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+	struct sockaddr_in from;
 
-	if (sockets[i].sockfd != sockfd) {
-		return -1;
-	}
 	initRcsHeader(&rcv_header);
 
 	ucpSetSockRecvTimeout(sockfd, 50);
-
 	while (totalseqnum > nextseqnum) {
 		if (send_complete == 1) {
-			cur_len = nextseqnum * MAX_DATA_LEN - len;
-			if (cur_len < 0) {
-				cur_len = MAX_DATA_LEN;
+			cur_len = MAX_DATA_LEN;
+			if ((nextseqnum+1) * MAX_DATA_LEN > len) {
+				cur_len = len - (nextseqnum)*MAX_DATA_LEN;
 			}
-//			make_pkt(nextseqnum, &buf[nextseqnum * MAX_DATA_LEN], cur_len, sendpkt);
+			make_pkt(nextseqnum, &buf[nextseqnum * MAX_DATA_LEN], cur_len, sendpkt);
 			send_complete = 0;
 		}
-		ucpSendTo(rcs_client_sockfd, sendpkt, cur_len + sizeof(rcs_header), &sockets[sockfd].sockaddr);
+		ucpSendTo(sockfd, sendpkt, cur_len + sizeof(rcs_header), &sockets[sockfd].sockaddr);
 
-		int size = ucpRecvFrom(rcs_client_sockfd, &rcv_header, 100, from);
+		int size = ucpRecvFrom(sockfd, &rcv_header, sizeof(rcs_header), &from);
 
 		if (size == -1) { // Timeout
 			continue;
 		} else {
 			checksum = rcv_header.checksum;
-			rcv_header.checksum = 0;
-			if (checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))) {
-				if (rcv_header.flags & ACK && rcv_header.seq_num == nextseqnum) {
+			if (checksum == compute_header_checksum(&rcv_header)) {
+				if (rcv_header.flags & FIN) {
+					break;
+				} else if (rcv_header.flags & ACK && rcv_header.seq_num == nextseqnum) {
 					send_complete = 1;
 					nextseqnum++;
 				} else {
@@ -443,10 +437,9 @@ int rcsSend(int sockfd, const void* buf, int len) {
 	}
 
 	for(int i = 0; i < TERM_SEND; i++) {
-		ucpRecvFrom(rcs_client_sockfd, &rcv_header, 100, from);
+		ucpRecvFrom(sockfd, &rcv_header, sizeof(rcs_header), &from);
 	}
 
-	free(from);
 	return len;
 
 }
