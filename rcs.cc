@@ -224,6 +224,14 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 			printf("CORRUPTED ACK\n");
 			continue;
 		}
+
+		if (rcv_header.flags & FIN) {	// Connection was closed by the server
+			errno = ENETUNREACH;
+			return -1;
+		} else if (!(rcv_header.flags & ACK)) {
+			printf("NOT ACK\n");
+			continue;
+		}
 		break;
 	}
 
