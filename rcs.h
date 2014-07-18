@@ -5,7 +5,8 @@ enum rcs_flags{
 	SYN = 1,
 	ACK = 2,
 	FIN = 4,
-	SYNACK = 8
+	SYNACK = 8,
+	ERR = 16
 } rcs_flags;
 
 struct rcs_header {
