@@ -332,6 +332,10 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 				return -1;
 			}
 			clients[sockfd].acked = 1;
+			send_header.checksum = 0;
+			send_header.flags = ACK;
+			send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
 		} else if (rcv_header.flags & FIN) {
 			errno = ENETUNREACH;
 			return -1;
