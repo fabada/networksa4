@@ -5,7 +5,8 @@ enum rcs_flags{
 	SYN = 1,
 	ACK = 2,
 	FIN = 4,
-	SYNACK = 8
+	SYNACK = 8,
+	ERR = 16
 } rcs_flags;
 
 struct rcs_header {
@@ -15,7 +16,7 @@ struct rcs_header {
 	unsigned int ack_num;
 	unsigned int offset;
 	unsigned int data_len;
-	unsigned int checksum;
+	unsigned long checksum;
 	unsigned int flags;
 };
 
