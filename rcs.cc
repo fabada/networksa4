@@ -130,6 +130,9 @@ void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt
  * ACK the FIN flag from the other end of the connection when it closes
  */
 int ackFin(int sockfd, struct sockaddr_in *from, rcs_header *send_header) {
+	if (clients.find(sockfd) != clients.end()) {
+		clients.erase(clients.find(sockfd));		// Client disconnected
+	}
 	send_header->checksum = 0;
 	send_header->flags = ACK;
 	send_header->checksum = hash((unsigned char*)send_header, sizeof(rcs_header));
