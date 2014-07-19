@@ -132,7 +132,7 @@ void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt
 int ackFin(int sockfd, struct sockaddr_in *from, rcs_header *send_header) {
 	send_header->checksum = 0;
 	send_header->flags = ACK;
-	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+	send_header->checksum = hash((unsigned char*)send_header, sizeof(rcs_header));
 	if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), from) == -1) {
 		return -1;
 	}
@@ -209,7 +209,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 			continue;
 		}
 		if (rcv_header.flags & FIN) {	// Connection was closed by the server
-			ackFin(sockfd, from, &send_header);
+			ackFin(sockfd, (struct sockaddr_in *)server, &send_header);
 			continue;
 		} else if (!(rcv_header.flags & SYNACK)) {
 			continue;
