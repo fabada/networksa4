@@ -126,6 +126,19 @@ void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt
 	memcpy(sendpkt + sizeof(rcs_header), data, data_len);
 }
 
+/**
+ * ACK the FIN flag from the other end of the connection when it closes
+ */
+int ackFin(int sockfd, struct sockaddr_in *from, rcs_header *send_header) {
+	send_header->checksum = 0;
+	send_header->flags = ACK;
+	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
+	if (ucpSendTo(sockfd, (void *)send_header, sizeof(rcs_header), from) == -1) {
+		return -1;
+	}
+
+	return 0;
+}
 int rcsSocket()
 {
 	int sockfd = ucpSocket();
@@ -196,8 +209,8 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 			continue;
 		}
 		if (rcv_header.flags & FIN) {	// Connection was closed by the server
-			errno = ENETUNREACH;
-			return -1;
+			ackFin(sockfd, from, &send_header);
+			continue;
 		} else if (!(rcv_header.flags & SYNACK)) {
 			continue;
 		}
@@ -266,8 +279,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 				return -1;
 			}
 		} else if (rcv_header.flags & FIN) {
-			errno = ENETUNREACH;
-			return -1;
+			ackFin(sockfd, from, &send_header);
+			continue;
 		} else {
 			continue;
 		}
@@ -308,8 +321,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 			clients[sockfd].acked = 1;
 		} else if (rcv_header.flags & FIN) {
-			errno = ENETUNREACH;
-			return -1;
+			ackFin(sockfd, from, &send_header);
+			continue;
 		} else {
 			continue;
 		}
@@ -458,7 +471,7 @@ int rcsClose(int sockfd)
 			tries++;
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
 			// Make sure we get a response from the client acknowledging the socket close
-			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
+			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
 				continue;
 			} else {
 				checksum = rcv_header.checksum;
@@ -487,7 +500,7 @@ int rcsClose(int sockfd)
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
 
 			// Make sure we get a response from the client acknowledging the socket close
-			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == 1) {
+			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
 				continue;
 			} else {
 				checksum = rcv_header.checksum;
