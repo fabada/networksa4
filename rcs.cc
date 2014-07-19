@@ -366,7 +366,8 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
 
-			if (rcv_header.flags & CLOSE) {
+			if (rcv_header.flags & CLOSE && checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len)) {
+				printf("GOT CLOSE RCSRECV\n");
 				ackClose(sockfd, &from, &send_header);
 				return len;
 			}
