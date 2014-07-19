@@ -363,6 +363,11 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
 
+			if (rcv_header.flags & CLOSE) {
+				ackClose(sockfd, &from, &send_header);
+				return len;
+			}
+
 			if (rcv_header.data_len < 0 || rcv_header.data_len > MAX_DATA_LEN) { // Corrupted
 			} else if (checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
 					&& rcv_header.seq_num == expectedseqnum) {
@@ -392,12 +397,13 @@ int rcsRecv(int sockfd, void *buf, int len) {
 
 int rcsSend(int sockfd, const void* buf, int len) {
 	unsigned char sendpkt[MAX_DATA_LEN + 100];
-	rcs_header rcv_header;
+	rcs_header send_header, rcv_header;
 	int i, send_complete = 1, cur_len;
 	unsigned int totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, nextseqnum = 0;
 	unsigned long checksum;
 	struct sockaddr_in from;
 
+	initRcsHeader(&send_header);
 	initRcsHeader(&rcv_header);
 
 	ucpSetSockRecvTimeout(sockfd, 50);
@@ -424,6 +430,9 @@ int rcsSend(int sockfd, const void* buf, int len) {
 				} else if (rcv_header.flags & ACK && rcv_header.seq_num == nextseqnum) {
 					send_complete = 1;
 					nextseqnum++;
+				} else if (rcv_header.flags & CLOSE) {
+					ackClose(sockfd, &from, &send_header);
+					return len;
 				} else {
 					continue;
 				}
