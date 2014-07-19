@@ -127,9 +127,9 @@ void make_pkt(int seqnum, const void* data, int data_len, unsigned char* sendpkt
 }
 
 /**
- * ACK the FIN flag from the other end of the connection when it closes
+ * ACK the CLOSE flag from the other end of the connection when it closes
  */
-int ackFin(int sockfd, struct sockaddr_in *from, rcs_header *send_header) {
+int ackClose(int sockfd, struct sockaddr_in *from, rcs_header *send_header) {
 	if (clients.find(sockfd) != clients.end()) {
 		clients.erase(clients.find(sockfd));		// Client disconnected
 	}
@@ -211,8 +211,8 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		if (checksum != h) {
 			continue;
 		}
-		if (rcv_header.flags & FIN) {	// Connection was closed by the server
-			ackFin(sockfd, (struct sockaddr_in *)server, &send_header);
+		if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
+			ackClose(sockfd, (struct sockaddr_in *)server, &send_header);
 			continue;
 		} else if (!(rcv_header.flags & SYNACK)) {
 			continue;
@@ -281,8 +281,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
 				return -1;
 			}
-		} else if (rcv_header.flags & FIN) {
-			ackFin(sockfd, from, &send_header);
+		} else if (rcv_header.flags & CLOSE) {
+			ackClose(sockfd, from, &send_header);
 			continue;
 		} else {
 			continue;
@@ -323,8 +323,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			rcsBind(asockfd, &a);
 
 			clients[sockfd].acked = 1;
-		} else if (rcv_header.flags & FIN) {
-			ackFin(sockfd, from, &send_header);
+		} else if (rcv_header.flags & CLOSE) {
+			ackClose(sockfd, from, &send_header);
 			continue;
 		} else {
 			continue;
@@ -454,7 +454,7 @@ int rcsClose(int sockfd)
 
 	initRcsHeader(&rcv_header);
 	initRcsHeader(&send_header);
-	send_header.flags = FIN;
+	send_header.flags = CLOSE;
 	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 	ucpSetSockRecvTimeout(sockfd, 100);
 
