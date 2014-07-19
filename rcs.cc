@@ -363,7 +363,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			if (rcv_header.data_len < 0 || rcv_header.data_len > MAX_DATA_LEN) { // Corrupted
 			} else if (checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
 					&& rcv_header.seq_num == expectedseqnum) {
-				memcpy(&buf[numrecv], &rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
+				memcpy(&(((unsigned char*)buf)[numrecv]), &(rcvbuf[sizeof(rcs_header)]), rcv_header.data_len);
 				numrecv = numrecv + rcv_header.data_len;
 				send_header.seq_num = rcv_header.seq_num;
 				send_header.checksum = compute_header_checksum(&send_header);
@@ -404,7 +404,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 			if ((nextseqnum+1) * MAX_DATA_LEN > len) {
 				cur_len = len - (nextseqnum)*MAX_DATA_LEN;
 			}
-			make_pkt(nextseqnum, &buf[nextseqnum * MAX_DATA_LEN], cur_len, sendpkt);
+			make_pkt(nextseqnum, &(((unsigned char*)buf)[nextseqnum * MAX_DATA_LEN]), cur_len, sendpkt);
 			send_complete = 0;
 		}
 		ucpSendTo(sockfd, sendpkt, cur_len + sizeof(rcs_header), &sockets[sockfd].sockaddr);
