@@ -323,6 +323,9 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			rcsBind(asockfd, &a);
 
 			clients[sockfd].acked = 1;
+			send_header.flags = ACK;
+			send_header.checksum = compute_header_checksum(&send_header);
+			ucpSendTo(asockfd, (void *)&send_header, sizeof(rcs_header), from);
 		} else if (rcv_header.flags & CLOSE) {
 			ackClose(sockfd, from, &send_header);
 			continue;
