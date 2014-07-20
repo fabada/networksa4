@@ -37,6 +37,7 @@ extern int ucpSetSockRecvTimeout(int, int);
 extern int ucpSendTo(int, const void *, int, const struct sockaddr_in *);
 extern ssize_t ucpRecvFrom(int, void *, int, struct sockaddr_in *);
 extern int ucpClose(int);
+extern unsigned int get_rand();
 
 map<int, rcssocket> sockets;
 map<int, asocket> asockets;						// asockfd maps to the sockfd
@@ -180,6 +181,9 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	rcs_header send_header, rcv_header;
 	unsigned long checksum, h;
 	struct sockaddr_in from;
+	unsigned int seq_num;
+	unsigned int reply_seq_num;
+	int done = 0;
 
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
@@ -197,7 +201,11 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
+		done = 0;
+		seq_num = get_rand()%100000;
 		send_header.flags = SYN;
+		send_header.seq_num = seq_num;
+
 		send_header.checksum = compute_header_checksum(&send_header);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
@@ -214,34 +222,42 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
 			ackClose(sockfd, (struct sockaddr_in *)server, &send_header);
 			continue;
-		} else if (!(rcv_header.flags & SYNACK)) {
+		} else if (!((rcv_header.flags & SYNACK) && rcv_header.ack_num == seq_num + 1)) {
 			continue;
 		}
+
+		reply_seq_num = rcv_header.seq_num;
 		send_header.flags = ACK;
+		send_header.ack_num = reply_seq_num + 1;
+
 		send_header.checksum = compute_header_checksum(&send_header);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
-		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
-			continue;
-		}
-		checksum = rcv_header.checksum;
-		h = compute_header_checksum(&rcv_header);
-		if (checksum != h) {
-			continue;
-		}
-		if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
-			errno = ENETUNREACH;
-			return -1;
-		} else if (!(rcv_header.flags & ACK)) {
-			continue;
-		}
-		break;
-	}
 
-	sockets[sockfd].serverIp = from.sin_addr.s_addr;
-	sockets[sockfd].port = from.sin_port;
-	memcpy(&sockets[sockfd].sockaddr, &from, sizeof(struct sockaddr_in));
+		for (int i = 0; i < TERM_SEND; ++i)
+		{
+			ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from);
+			checksum = rcv_header.checksum;
+			h = compute_header_checksum(&rcv_header);
+			if (checksum != h) {
+				continue;
+			}
+			if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
+				errno = ENETUNREACH;
+				return -1;
+			} else if (!(rcv_header.flags & ACK)) {
+				continue;
+			}
+			done = 1;
+			sockets[sockfd].serverIp = from.sin_addr.s_addr;
+			sockets[sockfd].port = from.sin_port;
+			memcpy(&sockets[sockfd].sockaddr, &from, sizeof(struct sockaddr_in));
+		}
+		if (done == 1) {
+			break;
+		}
+	}
 
 	return 0;
 }
@@ -252,6 +268,8 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 	rcs_header send_header, rcv_header;
 	unsigned long h = 0;
 	unsigned long checksum;
+	unsigned int seq_num;
+	unsigned int reply_seq_num;
 	// Invalid socket
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
@@ -287,10 +305,14 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 		// Check message for synack
 		if (rcv_header.flags & SYN) {
+			seq_num = get_rand() % 100000;
+			reply_seq_num = rcv_header.seq_num;
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
 
 			send_header.flags = SYNACK;
+			send_header.seq_num = seq_num;
+			send_header.ack_num = reply_seq_num + 1;
 			send_header.checksum = compute_header_checksum(&send_header);
 			if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
 				return -1;
@@ -318,10 +340,10 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 		if (rcv_header.flags & ACK) {
 			// Must send syn first
-			if (clients[sockfd].syned == 0) {
-				return -1;
+			if (clients[sockfd].syned == 0 || rcv_header.ack_num != seq_num + 1) {
+				continue;
 			}
-			// Connect to the client now
+			// Setup the asocket, so the cnonecting client can ack to it	
 			sockets[sockfd].clientIp = ipaddr;
 			sockets[sockfd].port = from->sin_port;
 			asockfd = ucpSocket();
@@ -337,9 +359,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			rcsBind(asockfd, &a);
 
 			clients[sockfd].acked = 1;
-			send_header.flags = ACK;
-			send_header.checksum = compute_header_checksum(&send_header);
-			ucpSendTo(asockfd, (void *)&send_header, sizeof(rcs_header), from);
 		} else if (rcv_header.flags & CLOSE) {
 			ackClose(sockfd, from, &send_header);
 			continue;
@@ -347,6 +366,13 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			continue;
 		}
 
+
+		for (int i = 0; i < TERM_SEND; ++i)
+		{
+			send_header.flags = ACK;
+			send_header.checksum = compute_header_checksum(&send_header);
+			ucpSendTo(asockfd, (void *)&send_header, sizeof(rcs_header), from);
+		}
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
 			return asockfd;
 		}
