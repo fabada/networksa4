@@ -58,8 +58,8 @@ void initSocket(int sockfd) {
  * @param ipaddr = client ip address
  */
 void initASocket(int sockfd, int asockfd, u_long ipaddr) {
-	asockets[asockfd].sockfd = sockfd;
-	asockets[asockfd].clientIp = ipaddr;
+	sockets[asockfd].sockfd = sockfd;
+	sockets[asockfd].clientIp = ipaddr;
 }
 
 map<u_long, client> initClientMap() {
@@ -327,7 +327,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			sockets[sockfd].port = from->sin_port;
 			asockfd = ucpSocket();
 			initASocket(sockfd, asockfd, ipaddr);
-			memcpy(&asockets[asockfd].sockaddr, from, sizeof(struct sockaddr_in));
+			memcpy(sockets[asockfd].sockaddr, from, sizeof(struct sockaddr_in));
 			struct sockaddr_in a;
 
 			memset(&a, 0, sizeof(struct sockaddr_in));
@@ -375,7 +375,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	ucpSetSockRecvTimeout(sockfd, 0);
 	for(;;) {
 		if (ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
-			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &asockets[sockfd].sockaddr);
+			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 		} else {
 			ucpSetSockRecvTimeout(sockfd, 50);
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
@@ -401,11 +401,11 @@ int rcsRecv(int sockfd, void *buf, int len) {
 				send_header.flags = FIN;
 				send_header.checksum = compute_header_checksum(&send_header);
 				for (int i = 0; i < TERM_SEND; i++) {
-					ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &asockets[sockfd].sockaddr);
+					ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 				}
 				break;
 			} else {
-				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &asockets[sockfd].sockaddr);
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 			}
 		}
 	}
@@ -486,13 +486,14 @@ int rcsClose(int sockfd)
 	ucpSetSockRecvTimeout(sockfd, 100);
 
 	if (sockets.find(sockfd) != sockets.end()) {
+		socket = sockets[sockfd].sockfd;
 		peer.sin_port = sockets[sockfd].port;
 
 		if (sockets[sockfd].serverIp > 0) {
 			peer.sin_addr.s_addr = sockets[sockfd].serverIp;
 		} else {
 			peer.sin_addr.s_addr = sockets[sockfd].clientIp;
-			clients.erase(clients.find(sockfd));
+			clients.erase(clients.find(socket));
 		}
 		sockets.erase(sockets.find(sockfd));
 
@@ -500,35 +501,6 @@ int rcsClose(int sockfd)
 		while (peer.sin_addr.s_addr > 0 && tries < 5) {
 			tries++;
 			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
-			// Make sure we get a response from the client acknowledging the socket close
-			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
-				continue;
-			} else {
-				checksum = rcv_header.checksum;
-				rcv_header.checksum = 0;
-				if (checksum == hash((unsigned char*)&rcv_header, sizeof(rcs_header))
-					&& (rcv_header.flags & ACK)) {
-					break;
-				}
-			}
-		}
-
-		return ucpClose(sockfd);
-	} else if (asockets.find(sockfd) != asockets.end()) {
-		socket = asockets[sockfd].sockfd;
-		clientIp = asockets[sockfd].clientIp;
-		asockets.erase(asockets.find(sockfd));
-
-		// Remove client from list of connected clients
-		clients.erase(clients.find(socket));
-
-		peer.sin_addr.s_addr = clientIp;
-
-		// Inform the peer in the client server link that the connection is closed
-		while (peer.sin_addr.s_addr > 0 && tries < 5) {
-			tries++;
-			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), &peer);
-
 			// Make sure we get a response from the client acknowledging the socket close
 			if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
 				continue;
