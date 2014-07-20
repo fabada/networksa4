@@ -183,6 +183,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 	struct sockaddr_in from;
 	unsigned int seq_num;
 	unsigned int reply_seq_num;
+	int done = 0;
 
 	if (sockets.find(sockfd) == sockets.end()) {
 		errno = EBADF;
@@ -200,6 +201,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 
 	// First syn, then ack. Use a loop in case of failure
 	while (true) {
+		done = 0;
 		seq_num = get_rand()%100000;
 		send_header.flags = SYN;
 		send_header.seq_num = seq_num;
@@ -234,21 +236,26 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), (const sockaddr_in *)&from) == -1) {
 			return -1;
 		}
-		// if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
-		// 	continue;
-		// }
-		// checksum = rcv_header.checksum;
-		// h = compute_header_checksum(&rcv_header);
-		// if (checksum != h) {
-		// 	continue;
-		// }
-		// if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
-		// 	errno = ENETUNREACH;
-		// 	return -1;
-		// } else if (!(rcv_header.flags & ACK)) {
-		// 	continue;
-		// }
-		break;
+
+		for (int i = 0; i < TERM_SEND; ++i)
+		{
+			ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from);
+			checksum = rcv_header.checksum;
+			h = compute_header_checksum(&rcv_header);
+			if (checksum != h) {
+				continue;
+			}
+			if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
+				errno = ENETUNREACH;
+				return -1;
+			} else if (!(rcv_header.flags & ACK)) {
+				continue;
+			}
+			done = 1;
+		}
+		if (done == 1) {
+			break;	
+		}
 	}
 
 	sockets[sockfd].serverIp = from.sin_addr.s_addr;
@@ -369,6 +376,13 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			continue;
 		}
 
+
+		for (int i = 0; i < TERM_SEND; ++i)
+		{
+			send_header.flags = ACK;
+			send_header.checksum = compute_header_checksum(&send_header);
+			ucpSendTo(asockfd, (void *)&send_header, sizeof(rcs_header), from);
+		}
 		if (clients[sockfd].syned == 1 && clients[sockfd].acked == 1) {
 			return asockfd;
 		}
