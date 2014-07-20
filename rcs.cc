@@ -380,7 +380,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 		if (size = ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
 			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 		} else {
-			ucpSetSockRecvTimeout(sockfd, 50);
+			ucpSetSockRecvTimeout(sockfd, 150);
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
 
@@ -437,7 +437,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 	initRcsHeader(&send_header);
 	initRcsHeader(&rcv_header);
 
-	ucpSetSockRecvTimeout(sockfd, 150);
+	ucpSetSockRecvTimeout(sockfd, 750);
 	while (totalseqnum > nextseqnum) {
 		if (send_complete == 1) {
 			cur_len = MAX_DATA_LEN;
