@@ -1,4 +1,4 @@
-#define MAX_DATA_LEN 1500
+#define MAX_DATA_LEN 1000
 #define TERM_SEND 12
 
 #include <iostream>
@@ -360,7 +360,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	unsigned long checksum;
 	int numrecv = 0;
 	rcs_header send_header, rcv_header;
-	unsigned char rcvbuf[1600];
+	unsigned char rcvbuf[MAX_DATA_LEN + sizeof(rcs_header)];
 
 	initRcsHeader(&rcv_header);
 	initRcsHeader(&send_header);
@@ -413,7 +413,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 }
 
 int rcsSend(int sockfd, const void* buf, int len) {
-	unsigned char sendpkt[MAX_DATA_LEN + 100];
+	unsigned char sendpkt[MAX_DATA_LEN + sizeof(rcs_header)];
 	rcs_header send_header, rcv_header;
 	int i, send_complete = 1, cur_len;
 	unsigned int totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, nextseqnum = 0;
@@ -427,8 +427,8 @@ int rcsSend(int sockfd, const void* buf, int len) {
 	while (totalseqnum > nextseqnum) {
 		if (send_complete == 1) {
 			cur_len = MAX_DATA_LEN;
-			if ((nextseqnum+1) * MAX_DATA_LEN > len) {
-				cur_len = len - (nextseqnum)*MAX_DATA_LEN;
+			if ((nextseqnum + 1) * MAX_DATA_LEN > len) {
+				cur_len = len - nextseqnum * MAX_DATA_LEN;
 			}
 			make_pkt(nextseqnum, &(((unsigned char*)buf)[nextseqnum * MAX_DATA_LEN]), cur_len, sendpkt);
 			send_complete = 0;
@@ -440,6 +440,7 @@ int rcsSend(int sockfd, const void* buf, int len) {
 		if (size == -1) { // Timeout
 			continue;
 		} else {
+			ucpSetSockRecvTimeout(sockfd, 0);
 			checksum = rcv_header.checksum;
 			if (checksum == compute_header_checksum(&rcv_header)) {
 				if (rcv_header.flags & FIN) {
@@ -459,12 +460,12 @@ int rcsSend(int sockfd, const void* buf, int len) {
 		}
 	}
 
+	ucpSetSockRecvTimeout(sockfd, 50);
 	for(int i = 0; i < TERM_SEND; i++) {
 		ucpRecvFrom(sockfd, &rcv_header, sizeof(rcs_header), &from);
 	}
 
 	return len;
-
 }
 
 int rcsClose(int sockfd)
