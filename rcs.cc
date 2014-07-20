@@ -230,7 +230,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		if (checksum != h) {
 			continue;
 		}
-
 		if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
 			errno = ENETUNREACH;
 			return -1;
@@ -327,7 +326,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			sockets[sockfd].port = from->sin_port;
 			asockfd = ucpSocket();
 			initASocket(sockfd, asockfd, ipaddr);
-			memcpy(sockets[asockfd].sockaddr, from, sizeof(struct sockaddr_in));
+			memcpy(&sockets[asockfd].sockaddr, from, sizeof(struct sockaddr_in));
 			struct sockaddr_in a;
 
 			memset(&a, 0, sizeof(struct sockaddr_in));
@@ -381,7 +380,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
 
-			if (rcv_header.flags & CLOSE && checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len)) {
+			if (rcv_header.flags & CLOSE && checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))) {
 				ackClose(sockfd, &from, &send_header);
 				return -1;
 			}
@@ -484,7 +483,6 @@ int rcsClose(int sockfd)
 	send_header.flags = CLOSE;
 	send_header.checksum = hash((unsigned char*)&send_header, sizeof(rcs_header));
 	ucpSetSockRecvTimeout(sockfd, 100);
-
 	if (sockets.find(sockfd) != sockets.end()) {
 		socket = sockets[sockfd].sockfd;
 		peer.sin_port = sockets[sockfd].port;
@@ -516,7 +514,7 @@ int rcsClose(int sockfd)
 
 		return ucpClose(sockfd);
 	} else {
-		// Not a proper sockfd
+		// Not a proper sockfdi
 		errno = EBADF;
 		return -1;
 	}
