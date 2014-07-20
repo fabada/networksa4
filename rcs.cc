@@ -233,7 +233,7 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		printf("rcvseqnum: %u\n", seq_num, reply_seq_num);
 
 		send_header.checksum = compute_header_checksum(&send_header);
-		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), (const sockaddr_in *)&from) == -1) {
+		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
 			return -1;
 		}
 
@@ -252,15 +252,14 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 				continue;
 			}
 			done = 1;
+			sockets[sockfd].serverIp = from.sin_addr.s_addr;
+			sockets[sockfd].port = from.sin_port;
+			memcpy(&sockets[sockfd].sockaddr, &from, sizeof(struct sockaddr_in));
 		}
 		if (done == 1) {
-			break;	
+			break;
 		}
 	}
-
-	sockets[sockfd].serverIp = from.sin_addr.s_addr;
-	sockets[sockfd].port = from.sin_port;
-	memcpy(&sockets[sockfd].sockaddr, &from, sizeof(struct sockaddr_in));
 
 	return 0;
 }
@@ -314,6 +313,40 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
 
+			send_header.flags = SYNACK;
+			send_header.seq_num = seq_num;
+			send_header.ack_num = reply_seq_num + 1;
+			send_header.checksum = compute_header_checksum(&send_header);
+			if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
+				return -1;
+			}
+		} else if (rcv_header.flags & CLOSE) {
+			ackClose(sockfd, from, &send_header);
+			continue;
+		} else {
+			continue;
+		}
+
+		// Get the ACK
+		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
+			continue;
+		}
+
+		checksum = rcv_header.checksum;
+		h = compute_header_checksum(&rcv_header);
+		if (checksum != h) {
+			send_header.flags = ERR;
+			send_header.checksum = compute_header_checksum(&send_header);
+			ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), from);
+			continue;
+		}
+
+		if (rcv_header.flags & ACK) {
+			printf("ack_num: %u\n", rcv_header.ack_num);
+			// Must send syn first
+			if (clients[sockfd].syned == 0 || rcv_header.ack_num != seq_num + 1) {
+				continue;
+			}
 			// Setup the asocket, so the cnonecting client can ack to it	
 			sockets[sockfd].clientIp = ipaddr;
 			sockets[sockfd].port = from->sin_port;
@@ -329,50 +362,11 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 
 			rcsBind(asockfd, &a);
 
-			send_header.flags = SYNACK;
-			send_header.seq_num = seq_num;
-			send_header.ack_num = reply_seq_num + 1;
-			send_header.checksum = compute_header_checksum(&send_header);
-			if (ucpSendTo(asockfd, (void *)&send_header, sizeof(rcs_header), from) == -1) {
-				return -1;
-			}
+			clients[sockfd].acked = 1;
 		} else if (rcv_header.flags & CLOSE) {
 			ackClose(sockfd, from, &send_header);
 			continue;
 		} else {
-			continue;
-		}
-
-		// Get the ACK
-		if (ucpRecvFrom(asockfd, (void *)&rcv_header, sizeof(rcs_header), from) == -1) {
-			ucpClose(asockfd);
-			continue;
-		}
-
-		checksum = rcv_header.checksum;
-		h = compute_header_checksum(&rcv_header);
-		if (checksum != h) {
-			send_header.flags = ERR;
-			send_header.checksum = compute_header_checksum(&send_header);
-			ucpSendTo(asockfd, (void *)&send_header, sizeof(rcs_header), from);
-			ucpClose(asockfd);
-			continue;
-		}
-
-		if (rcv_header.flags & ACK) {
-			printf("ack_num: %u\n", rcv_header.ack_num);
-			// Must send syn first
-			if (clients[sockfd].syned == 0 || rcv_header.ack_num != seq_num + 1) {
-				ucpClose(asockfd);
-				continue;
-			}
-			clients[sockfd].acked = 1;
-		} else if (rcv_header.flags & CLOSE) {
-			ackClose(asockfd, from, &send_header);
-			ucpClose(asockfd);
-			continue;
-		} else {
-			ucpClose(asockfd);
 			continue;
 		}
 
