@@ -205,7 +205,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		seq_num = get_rand()%100000;
 		send_header.flags = SYN;
 		send_header.seq_num = seq_num;
-		printf("seq_num: %u\n", seq_num);
 
 		send_header.checksum = compute_header_checksum(&send_header);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
@@ -230,7 +229,6 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		reply_seq_num = rcv_header.seq_num;
 		send_header.flags = ACK;
 		send_header.ack_num = reply_seq_num + 1;
-		printf("rcvseqnum: %u\n", seq_num, reply_seq_num);
 
 		send_header.checksum = compute_header_checksum(&send_header);
 		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
@@ -309,7 +307,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		if (rcv_header.flags & SYN) {
 			seq_num = get_rand() % 100000;
 			reply_seq_num = rcv_header.seq_num;
-			printf("seq_num: %u, rcvseqnum: %u\n", seq_num, reply_seq_num);
 			clients[sockfd].syned = 1;
 			clients[sockfd].acked = 0;
 
@@ -342,7 +339,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 		}
 
 		if (rcv_header.flags & ACK) {
-			printf("ack_num: %u\n", rcv_header.ack_num);
 			// Must send syn first
 			if (clients[sockfd].syned == 0 || rcv_header.ack_num != seq_num + 1) {
 				continue;
