@@ -231,23 +231,23 @@ int rcsConnect(int sockfd, const struct sockaddr_in *server) {
 		printf("rcvseqnum: %u\n", seq_num, reply_seq_num);
 
 		send_header.checksum = compute_header_checksum(&send_header);
-		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), server) == -1) {
+		if (ucpSendTo(sockfd, (void *)&send_header, sizeof(rcs_header), (const sockaddr_in *)&from) == -1) {
 			return -1;
 		}
-		if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
-			continue;
-		}
-		checksum = rcv_header.checksum;
-		h = compute_header_checksum(&rcv_header);
-		if (checksum != h) {
-			continue;
-		}
-		if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
-			errno = ENETUNREACH;
-			return -1;
-		} else if (!(rcv_header.flags & ACK)) {
-			continue;
-		}
+		// if (ucpRecvFrom(sockfd, (void *)&rcv_header, sizeof(rcs_header), &from) == -1) {
+		// 	continue;
+		// }
+		// checksum = rcv_header.checksum;
+		// h = compute_header_checksum(&rcv_header);
+		// if (checksum != h) {
+		// 	continue;
+		// }
+		// if (rcv_header.flags & CLOSE) {	// Connection was closed by the server
+		// 	errno = ENETUNREACH;
+		// 	return -1;
+		// } else if (!(rcv_header.flags & ACK)) {
+		// 	continue;
+		// }
 		break;
 	}
 
