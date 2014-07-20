@@ -356,14 +356,19 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 }
 
 int rcsRecv(int sockfd, void *buf, int len) {
+	cout << "Recv0" << endl;
 	unsigned int expectedseqnum = 0;
-	unsigned long checksum;
-	int numrecv = 0;
+	unsigned long checksum, header_checksum, body_checksum;
+	int numrecv = 0, size = 0;
 	rcs_header send_header, rcv_header;
 	unsigned char rcvbuf[MAX_DATA_LEN + sizeof(rcs_header)];
 
 	initRcsHeader(&rcv_header);
 	initRcsHeader(&send_header);
+
+	for (int i = 0; i < MAX_DATA_LEN + sizeof(rcs_header); i++) {
+		rcvbuf[i] = 0;
+	}
 
 	struct sockaddr_in from;
 
@@ -371,23 +376,40 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	send_header.flags = ACK;
 	send_header.checksum = compute_header_checksum(&send_header);
 
+	cout << "Recv1" << endl;
 	ucpSetSockRecvTimeout(sockfd, 0);
 	for(;;) {
-		if (ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
+		if (size = ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
 			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 		} else {
 			ucpSetSockRecvTimeout(sockfd, 50);
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
 
-			if (rcv_header.flags & CLOSE && checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))) {
+			cout << "Recv1.5" << endl;
+			if (rcv_header.data_len > len) {
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+				continue;
+			}
+
+			header_checksum = compute_header_checksum(&rcv_header);
+			body_checksum = hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
+
+			cout << "Recv1.75" << endl;
+			if (checksum != (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))) {
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+				continue;
+			}
+
+			cout << "Recv2" << endl;
+			if (rcv_header.flags & CLOSE) {
+				cout << "Recv2.5" << endl;
 				ackClose(sockfd, &from, &send_header);
 				return -1;
 			}
 
-			if (rcv_header.data_len < 0 || rcv_header.data_len > MAX_DATA_LEN) { // Corrupted
-			} else if (checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))
-					&& rcv_header.seq_num == expectedseqnum) {
+			cout << "Recv3" << endl;
+			if (rcv_header.seq_num == expectedseqnum) {
 				memcpy(&(((unsigned char*)buf)[numrecv]), &(rcvbuf[sizeof(rcs_header)]), rcv_header.data_len);
 				numrecv = numrecv + rcv_header.data_len;
 				send_header.seq_num = rcv_header.seq_num;
@@ -395,8 +417,8 @@ int rcsRecv(int sockfd, void *buf, int len) {
 				expectedseqnum++;
 			}
 
-			if (checksum == (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len)) 
-					&& rcv_header.flags & FIN) {
+			cout << "Recv4" << endl;
+			if (rcv_header.flags & FIN) {
 				send_header.flags = FIN;
 				send_header.checksum = compute_header_checksum(&send_header);
 				for (int i = 0; i < TERM_SEND; i++) {
@@ -409,13 +431,15 @@ int rcsRecv(int sockfd, void *buf, int len) {
 		}
 	}
 
+	cout << "Recv5" << endl;
+
 	return numrecv;
 }
 
 int rcsSend(int sockfd, const void* buf, int len) {
 	unsigned char sendpkt[MAX_DATA_LEN + sizeof(rcs_header)];
 	rcs_header send_header, rcv_header;
-	int i, send_complete = 1, cur_len;
+	int send_complete = 1, cur_len;
 	unsigned int totalseqnum = (len + MAX_DATA_LEN - 1)/MAX_DATA_LEN, nextseqnum = 0;
 	unsigned long checksum;
 	struct sockaddr_in from;
@@ -423,11 +447,11 @@ int rcsSend(int sockfd, const void* buf, int len) {
 	initRcsHeader(&send_header);
 	initRcsHeader(&rcv_header);
 
-	ucpSetSockRecvTimeout(sockfd, 50);
+	ucpSetSockRecvTimeout(sockfd, 150);
 	while (totalseqnum > nextseqnum) {
 		if (send_complete == 1) {
 			cur_len = MAX_DATA_LEN;
-			if ((nextseqnum + 1) * MAX_DATA_LEN > len) {
+			if ((nextseqnum + 1) * MAX_DATA_LEN > (unsigned int)len) {
 				cur_len = len - nextseqnum * MAX_DATA_LEN;
 			}
 			make_pkt(nextseqnum, &(((unsigned char*)buf)[nextseqnum * MAX_DATA_LEN]), cur_len, sendpkt);
@@ -472,7 +496,6 @@ int rcsClose(int sockfd)
 {
 	rcs_header send_header, rcv_header;
 	struct sockaddr_in from;
-	u_long clientIp;
 	unsigned long checksum;
 	int socket;
 	int tries = 0;
