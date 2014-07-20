@@ -327,7 +327,7 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 			sockets[sockfd].port = from->sin_port;
 			asockfd = ucpSocket();
 			initASocket(sockfd, asockfd, ipaddr);
-			memcpy(&sockets[asockfd].sockaddr, from, sizeof(struct sockaddr_in));
+			memcpy(&asockets[asockfd].sockaddr, from, sizeof(struct sockaddr_in));
 			struct sockaddr_in a;
 
 			memset(&a, 0, sizeof(struct sockaddr_in));
@@ -375,7 +375,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	ucpSetSockRecvTimeout(sockfd, 0);
 	for(;;) {
 		if (ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
-			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &asockets[sockfd].sockaddr);
 		} else {
 			ucpSetSockRecvTimeout(sockfd, 50);
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
@@ -401,11 +401,11 @@ int rcsRecv(int sockfd, void *buf, int len) {
 				send_header.flags = FIN;
 				send_header.checksum = compute_header_checksum(&send_header);
 				for (int i = 0; i < TERM_SEND; i++) {
-					ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+					ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &asockets[sockfd].sockaddr);
 				}
 				break;
 			} else {
-				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
+				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &asockets[sockfd].sockaddr);
 			}
 		}
 	}

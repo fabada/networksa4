@@ -12,6 +12,7 @@ typedef struct asocket
 {
 	int sockfd;		// Used for multiplexing the asocket into a particular socket
 	u_long clientIp;
+	struct sockaddr_in sockaddr;
 } asocket;
 
 typedef struct rcssocket {
