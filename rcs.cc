@@ -406,7 +406,7 @@ int rcsRecv(int sockfd, void *buf, int len) {
 		if (size = ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
 			ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 		} else {
-			ucpSetSockRecvTimeout(sockfd, 200);
+			ucpSetSockRecvTimeout(sockfd, 150);
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
 
@@ -448,6 +448,12 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			}
 		}
 	}
+
+	ucpSetSockRecvTimeout(sockfd, 50);
+	for(int i = 0; i < TERM_SEND; i++) {
+		ucpRecvFrom(sockfd, &rcv_header, sizeof(rcs_header), &from);
+	}
+
 
 	return numrecv;
 }
