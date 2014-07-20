@@ -356,7 +356,6 @@ int rcsAccept(int sockfd, struct sockaddr_in *from) {
 }
 
 int rcsRecv(int sockfd, void *buf, int len) {
-	cout << "Recv0" << endl;
 	unsigned int expectedseqnum = 0;
 	unsigned long checksum, header_checksum, body_checksum;
 	int numrecv = 0, size = 0;
@@ -376,7 +375,6 @@ int rcsRecv(int sockfd, void *buf, int len) {
 	send_header.flags = ACK;
 	send_header.checksum = compute_header_checksum(&send_header);
 
-	cout << "Recv1" << endl;
 	ucpSetSockRecvTimeout(sockfd, 0);
 	for(;;) {
 		if (size = ucpRecvFrom(sockfd, rcvbuf, MAX_DATA_LEN + 100, &from) == -1) { // Timeout or other error
@@ -386,7 +384,6 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			memcpy(&rcv_header, rcvbuf, sizeof(rcs_header));
 			checksum = rcv_header.checksum;
 
-			cout << "Recv1.5" << endl;
 			if (rcv_header.data_len > len) {
 				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 				continue;
@@ -395,20 +392,16 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			header_checksum = compute_header_checksum(&rcv_header);
 			body_checksum = hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len);
 
-			cout << "Recv1.75" << endl;
 			if (checksum != (compute_header_checksum(&rcv_header) + hash(&rcvbuf[sizeof(rcs_header)], rcv_header.data_len))) {
 				ucpSendTo(sockfd, (void*)&send_header, sizeof(rcs_header), &sockets[sockfd].sockaddr);
 				continue;
 			}
 
-			cout << "Recv2" << endl;
 			if (rcv_header.flags & CLOSE) {
-				cout << "Recv2.5" << endl;
 				ackClose(sockfd, &from, &send_header);
 				return -1;
 			}
 
-			cout << "Recv3" << endl;
 			if (rcv_header.seq_num == expectedseqnum) {
 				memcpy(&(((unsigned char*)buf)[numrecv]), &(rcvbuf[sizeof(rcs_header)]), rcv_header.data_len);
 				numrecv = numrecv + rcv_header.data_len;
@@ -417,7 +410,6 @@ int rcsRecv(int sockfd, void *buf, int len) {
 				expectedseqnum++;
 			}
 
-			cout << "Recv4" << endl;
 			if (rcv_header.flags & FIN) {
 				send_header.flags = FIN;
 				send_header.checksum = compute_header_checksum(&send_header);
@@ -430,8 +422,6 @@ int rcsRecv(int sockfd, void *buf, int len) {
 			}
 		}
 	}
-
-	cout << "Recv5" << endl;
 
 	return numrecv;
 }
